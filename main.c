@@ -18,9 +18,9 @@ vec2f_t move_buffer[move_buffer_num];
 
 #define STATS_MOVE 4
 
-int32_t is_move_in_range(vec2i_t player_tile_pos, vec2i_t target_tile_pos)
+uint32_t tiles_distance(vec2i_t tile1_pos, vec2i_t tile2_pos)
 {
-	return (abs(target_tile_pos.x - player_tile_pos.x) + abs(target_tile_pos.y - player_tile_pos.y) < STATS_MOVE);
+	return (abs(tile1_pos.x - tile2_pos.x) + abs(tile1_pos.y - tile2_pos.y) < STATS_MOVE);
 }
 
 void ui_font_text_render(SDL_Renderer *renderer, TTF_Font *font, char *text, int32_t x, int32_t y)
@@ -83,11 +83,12 @@ void solve_astar(tile_t *tiles, tile_t *tile_start, tile_t *tile_end)
 
 	while(index >= 0/* && tile_current != tile_end*/)
 	{
+		
 		if(tiles_to_test[index]->visited == 1)
 			index--;
 		
-		if(index < 0)
-			break;
+	///	if(index < 0)
+	//		break;
 		
 		tile_current = tiles_to_test[index];
 		tile_current->visited = 1;
@@ -164,6 +165,16 @@ tile_t* get_tile(tile_t tiles[], uint32_t x, uint32_t y)
 	return &tiles[y * TILE_MAP_COUNT_X  + x];
 }
 
+void player_update_animation(player_t *player)
+{
+	player->animation_counter++;
+	if(player->animation_counter >= 10)
+	{
+		player->animation_counter = 0;
+		player->animation_frame++;
+		player->animation_frame = player->animation_frame % 2;
+	}
+}
 int main()
 {
 	SDL_Init(SDL_INIT_EVERYTHING);
@@ -246,11 +257,42 @@ int main()
 		}
 	}
 
-	vec2i_t player_tile_pos = {3, 2};
-	vec2f_t player_pos = {	player_tile_pos.x * world.tile_size * world.scale + world.offset.x,
-				player_tile_pos.y * world.tile_size * world.scale + world.offset.y};
+	player_t player1 = {};
+	player1.tile_pos.x = 3;
+	player1.tile_pos.y = 2;
+	player1.pos.x = player1.tile_pos.x * world.tile_size * world.scale + world.offset.x;
+	player1.pos.y = player1.tile_pos.y * world.tile_size * world.scale + world.offset.y;
+	player1.animation_frame = 0;
+	player1.animation_counter = 0;
 
-	vec2f_t cursor_tile = {2.0f, 2.0f};
+	player_t player2 = {};
+	player2.tile_pos.x = 5;
+	player2.tile_pos.y = 2;
+	player2.pos.x = player2.tile_pos.x * world.tile_size * world.scale + world.offset.x;
+	player2.pos.y = player2.tile_pos.y * world.tile_size * world.scale + world.offset.y;
+	player2.animation_frame = 0;
+	player2.animation_counter = 0;
+
+	player_t player3 = {};
+	player3.tile_pos.x = 4;
+	player3.tile_pos.y = 6;
+	player3.pos.x = player3.tile_pos.x * world.tile_size * world.scale + world.offset.x;
+	player3.pos.y = player3.tile_pos.y * world.tile_size * world.scale + world.offset.y;
+	player3.animation_frame = 0;
+	player3.animation_counter = 0;
+
+#define PLAYERS_NUM 3
+	player_t *players[PLAYERS_NUM] = {};
+	players[0] = &player1;
+	players[1] = &player2;
+	players[2] = &player3;
+
+	uint32_t player_current_index = 0;
+	player_t *player_current = players[player_current_index];
+	
+
+
+	vec2i_t cursor_tile = {player_current->tile_pos.x, player_current->tile_pos.y};
 
 	SDL_Surface *surface_tmp = IMG_Load("./slime.png");
 	SDL_Texture *player_texture = SDL_CreateTextureFromSurface(renderer, surface_tmp);
@@ -270,23 +312,19 @@ int main()
 	float end_y = 0.0f;
 	float t = 0.0f;
 
-	float speed = 0.2f;
+	float speed = 0.08f;
 
 	move_buffer_index = -1;
 
 
 
-	vec2f_t enemy_tile = {5.0f, 2.0f};
-	vec2f_t enemy_pos = {	enemy_tile.x * world.tile_size * world.scale + world.offset.x,
-				enemy_tile.y * world.tile_size * world.scale + world.offset.y};
 
 
 
-	uint32_t enemy_animation_counter = 0;
-	uint32_t enemy_frame_counter = 0;
 
-	uint32_t player_animation_counter = 0;
-	uint32_t player_frame_counter = 0;
+
+	uint32_t change_player = 1;
+	uint32_t player_has_moved = 0;
 
 	while(is_running)
 	{
@@ -345,26 +383,27 @@ int main()
 
 						case SDLK_SPACE:
 						{
-							tile_t *start_tile = get_tile(tiles, player_tile_pos.x, player_tile_pos.y);
-							tile_t *end_tile = get_tile(tiles, cursor_tile.x, cursor_tile.y);
+							if(move_buffer_index < 0 && !is_moving)
+								change_player = 1;
+						} break;
 
-							if(!end_tile->obstacle && end_tile->truly_reachable && is_move_in_range(end_tile->pos, start_tile->pos))
+						case SDLK_z:
+						{
+							if(!player_has_moved)
 							{
-								if(move_buffer_index < 0 && !is_moving)
+								tile_t *start_tile = get_tile(tiles, player_current->tile_pos.x, player_current->tile_pos.y);
+								tile_t *end_tile = get_tile(tiles, cursor_tile.x, cursor_tile.y);
+
+								if(!end_tile->obstacle && end_tile->truly_reachable && tiles_distance(end_tile->pos, start_tile->pos))
 								{
-									// update possible movements
-									solve_astar(tiles, start_tile, end_tile);
-									generate_moves(end_tile);
-									printf("(%d %d) - %d\n", end_tile->pos.y, end_tile->pos.x, end_tile->truly_reachable);
-									printf("(%d %d) - %d\n", end_tile->pos.y, end_tile->pos.x, end_tile->obstacle);
-									printf("\n");
-								}
-							}
-							for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
-							{
-								for(int x = 0; x < TILE_MAP_COUNT_X; x++)
-								{
-									//printf("(%d %d) - %d", y, x, get_tile(tiles, x, y)->reachable);
+									if(move_buffer_index < 0 && !is_moving)
+									{
+										// update possible movements
+										solve_astar(tiles, start_tile, end_tile);
+										generate_moves(end_tile);
+
+										player_has_moved = 1;
+									}
 								}
 							}
 						} break;
@@ -381,23 +420,72 @@ int main()
 		if(cursor_tile.y + test_tile_y >= 0 && cursor_tile.y + test_tile_y < TILE_MAP_COUNT_Y)
 			cursor_tile.y += test_tile_y;
 		
+		// pass turn
+		if(change_player)
+		{
+			// change player
+			change_player = 0;
+			player_current_index++;			
+			player_current_index %= PLAYERS_NUM;
+			player_current = players[player_current_index];
+			cursor_tile.x = player_current->tile_pos.x;
+			cursor_tile.y = player_current->tile_pos.y;
+			
+			player_has_moved = 0;
+
+			// compute moving area
+			for(int i = 0; i < TILE_MAP_COUNT_Y * TILE_MAP_COUNT_X; i++)
+			{
+				tiles[i].truly_reachable = 0;
+
+				vec2i_t tile_to_test_pos = {tiles[i].pos.x, tiles[i].pos.y};
+
+				if(tiles_distance(tile_to_test_pos, player_current->tile_pos) && !tiles[i].obstacle) 
+					tiles[i].reachable = 1;
+				else
+					tiles[i].reachable = 0;
+			}
+
+			for(int i = 0; i < PLAYERS_NUM; i++)
+			{
+				if(players[i] != player_current)
+					get_tile(tiles, players[i]->tile_pos.x, players[i]->tile_pos.y)->reachable = 0;
+			}
+											
+			for(int i = 0; i < TILE_MAP_COUNT_Y * TILE_MAP_COUNT_X; i++)
+			{
+				if(tiles[i].reachable == 1)
+				{
+					tile_t *tile_start = get_tile(tiles, player_current->tile_pos.x, player_current->tile_pos.y);
+					tile_t *tile_end = &tiles[i];
+					solve_astar(tiles,  tile_start, tile_end);
+					uint32_t moves_num = generate_moves_tmp(tile_end);
+
+					if(moves_num <= 4 && moves_num != 1)
+						tiles[i].truly_reachable = 1;
+				}
+			}
+		}
+
 		// move player to cursor
 		if(!is_moving)
+		{
 			if(move_buffer_index >= 0)
 			{
 				start_moving = 1;
 			}
+		}
 		if(start_moving)
 		{
 			start_moving = 0;
 
-			player_tile_pos.x += move_buffer[move_buffer_index].x;
-			player_tile_pos.y += move_buffer[move_buffer_index].y;
+			player_current->tile_pos.x += move_buffer[move_buffer_index].x;
+			player_current->tile_pos.y += move_buffer[move_buffer_index].y;
 
-			start_x = player_pos.x;
-			start_y = player_pos.y;
-			end_x = player_pos.x + (move_buffer[move_buffer_index].x * world.tile_size * world.scale);
-			end_y = player_pos.y + (move_buffer[move_buffer_index].y * world.tile_size * world.scale);
+			start_x = player_current->pos.x;
+			start_y = player_current->pos.y;
+			end_x = player_current->pos.x + (move_buffer[move_buffer_index].x * world.tile_size * world.scale);
+			end_y = player_current->pos.y + (move_buffer[move_buffer_index].y * world.tile_size * world.scale);
 			t = 0.0f;
 
 			move_buffer_index--;
@@ -412,98 +500,56 @@ int main()
 				t = 1.0f;
 				is_moving = 0;
 			}
-			player_pos.x = lerp(start_x, end_x, t);
-			player_pos.y = lerp(start_y, end_y, t);
+			player_current->pos.x = lerp(start_x, end_x, t);
+			player_current->pos.y = lerp(start_y, end_y, t);
 		}
 
 		
-	for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
-	{
-		for(int x = 0; x < TILE_MAP_COUNT_X; x++)
-		{
-			get_tile(tiles, x, y)->truly_reachable = 0;
-
-			vec2i_t current_tile_pos = {x, y};
-			if(	is_move_in_range(current_tile_pos, player_tile_pos) && 
-				!get_tile(tiles, x, y)->obstacle)
-			{
-				get_tile(tiles, x, y)->reachable = 1;
-			}
-			else
-			{
-				get_tile(tiles, x, y)->reachable = 0;
-			}
-		}
-	}
-
-	get_tile(tiles, enemy_tile.x, enemy_tile.y)->obstacle = 1;
-	get_tile(tiles, enemy_tile.x, enemy_tile.y)->reachable = 0;
-									
-	for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
-	{
-		for(int x = 0; x < TILE_MAP_COUNT_X; x++)
-		{
-			if(tiles[y * TILE_MAP_COUNT_X + x].reachable == 1)
-			{
-				tile_t *tile_start = get_tile(tiles, player_tile_pos.x, player_tile_pos.y);
-				tile_t *tile_end = get_tile(tiles, x, y);
-				solve_astar(tiles,  tile_start, tile_end);
-				uint32_t moves_num = generate_moves_tmp(tile_end);
-
-				if(moves_num <= 4 && moves_num != 1)
-					tiles[y * TILE_MAP_COUNT_X + x].truly_reachable = 1;
-			}
-		}
-	}
 
 
 		// render background
 		SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
 		SDL_RenderClear(renderer);
 
-		// render tilemap
-		for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
+		// render tilemap + moving area
+		for(int i = 0; i < TILE_MAP_COUNT_Y * TILE_MAP_COUNT_X; i++)
 		{
-			for(int x = 0; x < TILE_MAP_COUNT_X; x++)
+			// tilemap
+			int32_t tile_id = tiles[i].id;
+
+			if(tile_id == 0)
+				SDL_SetRenderDrawColor(renderer, 32, 32, 32, 255);
+			else if(tile_id == 1)
+				SDL_SetRenderDrawColor(renderer, 48, 48, 48, 255);
+
+			SDL_Rect tile_rect = {	tiles[i].pos.x * world.tile_size * world.scale + world.offset.x, 
+						tiles[i].pos.y * world.scale * world.tile_size + world.offset.y, 
+						world.tile_size * world.scale, 
+						world.tile_size * world.scale};
+			SDL_RenderFillRect(renderer, &tile_rect);
+
+			// moving area
+			if(move_buffer_index < 0 && !is_moving && !player_has_moved)
 			{
-				int32_t tile_id = get_tile(tiles, x, y)->id;
-
-				if(tile_id == 0)
+				if(tiles[i].truly_reachable && !tiles[i].obstacle)
 				{
-					SDL_SetRenderDrawColor(renderer, 32, 32, 32, 255);
+					SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+					SDL_Rect area_rect = {	tiles[i].pos.x * world.tile_size * world.scale + world.offset.x, 
+								tiles[i].pos.y * world.scale * world.tile_size + world.offset.y, 
+								world.tile_size * world.scale, 
+								world.tile_size * world.scale};
+					SDL_RenderFillRect(renderer, &area_rect);
 				}
-				if(tile_id == 1)
-				{
-					SDL_SetRenderDrawColor(renderer, 48, 48, 48, 255);
-				}
-
-				SDL_Rect tile_rect = {	x * world.tile_size * world.scale + world.offset.x, 
-							y * world.scale * world.tile_size + world.offset.y, 
-							world.tile_size * world.scale, 
-							world.tile_size * world.scale};
-				SDL_RenderFillRect(renderer, &tile_rect);
 			}
 		}
 
-		// render moving area
-		if(move_buffer_index < 0 && !is_moving)
-		{
-			for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
-			{
-				for(int x = 0; x < TILE_MAP_COUNT_X; x++)
-				{
-					if(get_tile(tiles, x, y)->truly_reachable && !get_tile(tiles, x, y)->obstacle)
-					{
-						SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
-						SDL_Rect area_rect = {	x * world.tile_size * world.scale + world.offset.x, 
-									y * world.scale * world.tile_size + world.offset.y, 
-									world.tile_size * world.scale, 
-									world.tile_size * world.scale};
-						SDL_RenderFillRect(renderer, &area_rect);
-					}
-				}
-			}
-		}
+		// player bg debug
+		SDL_SetRenderDrawColor(renderer, 255, 128, 0, 255);
+		SDL_Rect player_bg_debug_rect = {	player_current->tile_pos.x * world.tile_size * world.scale + world.offset.x, 
+						player_current->tile_pos.y * world.scale * world.tile_size + world.offset.y, 
+						world.tile_size * world.scale, 
+						world.tile_size * world.scale};
+		SDL_RenderFillRect(renderer, &player_bg_debug_rect);
 
 		// render cursor
 		SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
@@ -513,49 +559,26 @@ int main()
 					world.tile_size * world.scale};
 		SDL_RenderFillRect(renderer, &cursor_rect);
 
-		/// render player bg debug
-		SDL_SetRenderDrawColor(renderer, 255, 128, 0, 255);
-		SDL_Rect player_bg_rect = {	player_tile_pos.x * world.tile_size * world.scale + world.offset.x, 
-						player_tile_pos.y * world.scale * world.tile_size + world.offset.y, 
-						world.tile_size * world.scale, 
-						world.tile_size * world.scale};
-		SDL_RenderFillRect(renderer, &player_bg_rect);
-
-		// render player
-		player_animation_counter++;
-		if(player_animation_counter >= 10)
+		// render players
+		for(int i = 0; i < PLAYERS_NUM; i++)
 		{
-			player_animation_counter = 0;
-			player_frame_counter++;
-			player_frame_counter = player_frame_counter % 2;
-		}
-		SDL_Rect player_src_rect = {	player_frame_counter * world.tile_size, 
+			player_update_animation(players[i]);
+			SDL_Rect src_rect = {	players[i]->animation_frame * world.tile_size, 
 						0, 
 						world.tile_size, 
 						world.tile_size};
-		SDL_Rect player_dst_rect = {	player_pos.x, 
-						player_pos.y, 
+			SDL_Rect dst_rect = {	players[i]->pos.x, 
+						players[i]->pos.y, 
 						world.tile_size * world.scale, 
 						world.tile_size * world.scale};
-		SDL_RenderCopy(renderer, player_texture, &player_src_rect, &player_dst_rect);
-
-		// render enemy
-		enemy_animation_counter++;
-		if(enemy_animation_counter >= 10)
-		{
-			enemy_animation_counter = 0;
-			enemy_frame_counter++;
-			enemy_frame_counter = enemy_frame_counter % 2;
+			SDL_RenderCopy(renderer, player_texture, &src_rect, &dst_rect);
 		}
-		SDL_Rect enemy_src_rect = {	enemy_frame_counter * world.tile_size, 
-						0, 
-						world.tile_size, 
-						world.tile_size};
-		SDL_Rect enemy_dst_rect = {	enemy_pos.x, 
-						enemy_pos.y, 
-						world.tile_size * world.scale, 
-						world.tile_size * world.scale};
-		SDL_RenderCopy(renderer, player_texture, &enemy_src_rect, &enemy_dst_rect);
+
+
+
+
+
+
 
 
 

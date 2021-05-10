@@ -38,6 +38,15 @@ typedef struct tile_t
 	struct tile_t *parent;
 } tile_t;
 
+typedef struct player_t
+{
+	vec2i_t tile_pos;
+	vec2f_t pos;
+
+	uint32_t animation_frame;
+	uint32_t animation_counter;
+} player_t;
+
 typedef struct game_state_t
 {
 	memory_arena_t memory_arena;
