@@ -12,43 +12,15 @@
 #define TILE_MAP_COUNT_X 8 
 #define TILE_MAP_COUNT_Y 8
 
-typedef struct world_t
-{
-	float tile_size;
-	float scale;
-	vec2f_t offset;
-} world_t;
-
-
-#define move_buffer_num 8
+#define move_buffer_num 16
 int32_t move_buffer_index;
 vec2f_t move_buffer[move_buffer_num];
 
-int32_t check_valid_move(uint32_t test_tile_x, uint32_t test_tile_y, uint32_t player_tile_x, uint32_t player_tile_y)
-{
-	int32_t res = 0;
+#define STATS_MOVE 4
 
-	if(abs(test_tile_x - player_tile_x) + abs(test_tile_y - player_tile_y) < 3)
-	{
-		res = 1;
-	}
-	
-	return res;
-	
-}
-
-void move_player_to_cursor(uint32_t cursor_tile_x, uint32_t cursor_tile_y, uint32_t *player_x, uint32_t *player_y, float tile_size)
+int32_t is_move_in_range(vec2i_t player_tile_pos, vec2i_t target_tile_pos)
 {
-	if(check_valid_move(cursor_tile_x, cursor_tile_y, *player_x, *player_y))
-	{
-		*player_x = cursor_tile_x;
-		*player_y = cursor_tile_y;
-	}
-}
-
-int32_t get_tile_value(tilemap_t *tilemap, uint32_t x, uint32_t y)
-{
-	return tilemap->tiles[y * TILE_MAP_COUNT_X  + x];
+	return (abs(target_tile_pos.x - player_tile_pos.x) + abs(target_tile_pos.y - player_tile_pos.y) < STATS_MOVE);
 }
 
 void ui_font_text_render(SDL_Renderer *renderer, TTF_Font *font, char *text, int32_t x, int32_t y)
@@ -79,26 +51,12 @@ void* push_struct(memory_arena_t *arena, uint32_t size)
 	return res;
 }
 
-typedef struct node_t
+float distance(tile_t *a, tile_t *b)
 {
-	int id;
-	int x;
-	int y;
-	int visited;
-	int obstacle;
-	int global;
-	int local;
-	int neighbors_num;
-	struct node_t *neighbors[4];
-	struct node_t *parent;
-} node_t;
-
-float distance(node_t *a, node_t *b)
-{
-	return sqrt((a->x - b->x) * (a->x - b->x) + (a->y - b->y) * (a->y - b->y));
+	return sqrt((a->pos.x - b->pos.x) * (a->pos.x - b->pos.x) + (a->pos.y - b->pos.y) * (a->pos.y - b->pos.y));
 }
 
-void solve_astar(node_t *nodes, node_t *node_start, node_t *node_end)
+void solve_astar(tile_t *tiles, tile_t *tile_start, tile_t *tile_end)
 {
 	for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
 	{
@@ -106,81 +64,104 @@ void solve_astar(node_t *nodes, node_t *node_start, node_t *node_end)
 		{
 			int i = y * TILE_MAP_COUNT_X + x;
 
-			nodes[i].parent = 0;
-			nodes[i].visited = 0;
-			nodes[i].global = 9999;
-			nodes[i].local = 9999;
+			tiles[i].parent = 0;
+			tiles[i].visited = 0;
+			tiles[i].global = 9999;
+			tiles[i].local = 9999;
 		}
 	}
 
-	node_t *node_current = node_start;
-	node_start->local = 0.0f;
-	node_start->global = distance(node_start, node_end);
+	tile_t *tile_current = tile_start;
+	tile_start->local = 0.0f;
+	tile_start->global = distance(tile_start, tile_end);
 
 	int index = -1;
 #define BUFFER_SIZE 256
-	node_t *nodes_to_test[BUFFER_SIZE];
+	tile_t *tiles_to_test[BUFFER_SIZE];
 
-	nodes_to_test[++index] = node_start;
+	tiles_to_test[++index] = tile_start;
 
-	while(index >= 0 && node_current != node_end)
+	while(index >= 0/* && tile_current != tile_end*/)
 	{
-		if(nodes_to_test[index]->visited == 1)
+		if(tiles_to_test[index]->visited == 1)
 			index--;
 		
 		if(index < 0)
 			break;
 		
-		node_current = nodes_to_test[index];
-		node_current->visited = 1;
+		tile_current = tiles_to_test[index];
+		tile_current->visited = 1;
 
 		int i = 0;
-		while(i < node_current->neighbors_num)
+		while(i < tile_current->neighbors_num)
 		{
-			node_t *node_neighbor = node_current->neighbors[i];
+			tile_t *tile_neighbor = tile_current->neighbors[i];
 
-			if(!node_neighbor->visited && node_neighbor->obstacle == 0)
-				nodes_to_test[++index] = node_neighbor;
+			if(!tile_neighbor->visited && tile_neighbor->obstacle == 0 && tile_neighbor->reachable)
+				tiles_to_test[++index] = tile_neighbor;
 			
-			float possibly_lower_goal = node_current->local + distance(node_current, node_neighbor);
+			float possibly_lower_goal = tile_current->local + distance(tile_current, tile_neighbor);
 
-			if(possibly_lower_goal < node_neighbor->local)
+			if(possibly_lower_goal < tile_neighbor->local)
 			{
-				node_neighbor->parent = node_current;
-				node_neighbor->local = possibly_lower_goal;
-				node_neighbor->global = node_neighbor->local + distance(node_neighbor, node_end);
+				tile_neighbor->parent = tile_current;
+				tile_neighbor->local = possibly_lower_goal;
+				tile_neighbor->global = tile_neighbor->local + distance(tile_neighbor, tile_end);
 			}
 
 			i++;
 		}
 	}
+}
 
-	int parents_buffer_index = -1;
-	vec2f_t parents_buffer[16];
-	if(node_end != 0)
+uint32_t generate_moves_tmp(tile_t *tile_end)
+{
+	// get array of tiles position
+	uint32_t res = 0;
+	if(tile_end != 0)
 	{
-		node_t *p = node_end;
+		tile_t *p = tile_end;
 		while(p != 0)
 		{
-			vec2f_t pos = {p->x, p->y};
+			res++;
+			p = p->parent;
+		}
+	}
+	return res;
+}
+
+void generate_moves(tile_t *tile_end)
+{
+	// get array of tiles position
+	int parents_buffer_index = -1;
+	vec2f_t parents_buffer[16];
+	if(tile_end != 0)
+	{
+		tile_t *p = tile_end;
+		while(p != 0)
+		{
+			vec2f_t pos = {p->pos.x, p->pos.y};
 			parents_buffer[++parents_buffer_index] = pos;
 			p = p->parent;
 		}
 	}
 
-	
-	vec2f_t pos_prev = {parents_buffer[parents_buffer_index].x, parents_buffer[parents_buffer_index].y};
-	while(parents_buffer_index >= 0)
+	// generate and add moves to move_buffer
+	vec2f_t pos_prev = {parents_buffer[0].x, parents_buffer[0].y};
+	for(int i = 0; i <= parents_buffer_index; i++)
 	{
-		vec2f_t pos_current = {parents_buffer[parents_buffer_index].x, parents_buffer[parents_buffer_index].y};
-		parents_buffer_index--;
-
-		vec2f_t move = {pos_current.x - pos_prev.x, pos_current.y - pos_prev.y};
+		vec2f_t pos_current = {parents_buffer[i].x, parents_buffer[i].y};
+		vec2f_t move = {pos_prev.x - pos_current.x, pos_prev.y - pos_current.y};
 		pos_prev = pos_current;
-
+		
 		if(move.x != 0 || move.y != 0)
 			move_buffer[++move_buffer_index] = move;
 	}
+}
+
+tile_t* get_tile(tile_t tiles[], uint32_t x, uint32_t y)
+{
+	return &tiles[y * TILE_MAP_COUNT_X  + x];
 }
 
 int main()
@@ -194,7 +175,7 @@ int main()
 
 	memory_t memory = {};
 	memory.permanent_storage_size = 64ULL * 1024ULL * 1024ULL;
-	memory.permanent_storage = mmap(0, memory.permanent_storage_size , PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+	//memory.permanent_storage = mmap(0, memory.permanent_storage_size , PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
 	memory.permanent_storage = calloc(memory.permanent_storage_size, sizeof(char));
 
 	if(!memory.permanent_storage)
@@ -203,39 +184,8 @@ int main()
 	}
 
 	game_state_t *game_state = (game_state_t*)memory.permanent_storage;
-
 	memory_arena_init(&game_state->memory_arena, memory.permanent_storage_size - sizeof(game_state), (uint32_t*)memory.permanent_storage + sizeof(game_state));
-	
-#if 0
-	game_state->test = (test_t*)push_struct(&game_state->memory_arena, sizeof(test_t));
-	game_state->test->val = 3;
-
-	game_state->player_pos = (player_pos_t*)push_struct(&game_state->memory_arena, sizeof(player_pos_t));
-	game_state->player_pos->x = 2;
-	game_state->player_pos->y = 2;
-#endif
-
 	game_state->tiles = (uint32_t*)push_struct(&game_state->memory_arena, sizeof(uint32_t) * TILE_MAP_COUNT_X  * TILE_MAP_COUNT_Y);
-
-	uint32_t tilemap1[TILE_MAP_COUNT_Y][TILE_MAP_COUNT_X] = 
-	{
-		{1,1,1,1,1,1,1,1,},
-		{1,0,0,0,0,0,0,1,},
-		{1,0,0,0,0,0,0,1,},
-		{1,0,0,0,0,0,0,0,},
-		{1,0,0,0,0,0,0,1,},
-		{1,0,0,0,0,0,0,1,},
-		{1,0,0,0,0,0,0,1,},
-		{1,1,1,1,1,1,1,1,},
-	};
-
-	for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
-	{
-		for(int x = 0; x < TILE_MAP_COUNT_X; x++)
-		{
-			game_state->tiles[y * TILE_MAP_COUNT_X + x] = tilemap1[y][x]; 
-		}
-	}
 
 	world_t world;
 	world.tile_size = 8;
@@ -243,49 +193,62 @@ int main()
 	world.offset.x = 100;
 	world.offset.y = 30;
 
+	uint32_t tilemap1[TILE_MAP_COUNT_Y][TILE_MAP_COUNT_X] = 
+	{
+		{1,1,1,1,1,1,1,1,},
+		{1,0,0,0,0,0,0,1,},
+		{1,0,0,0,0,0,0,1,},
+		{1,0,0,1,1,0,0,0,},
+		{1,0,0,1,0,1,0,1,},
+		{1,0,0,0,1,0,0,1,},
+		{1,0,0,0,0,0,0,1,},
+		{1,1,1,1,1,1,1,1,},
+	};
 
-	node_t nodes[TILE_MAP_COUNT_Y * TILE_MAP_COUNT_X] = {};
+	tile_t tiles[TILE_MAP_COUNT_Y * TILE_MAP_COUNT_X] = {};
 
 	// init astar
 	for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
 	{
 		for(int x = 0; x < TILE_MAP_COUNT_X; x++)
 		{
-			int i = y * TILE_MAP_COUNT_X + x;
+			tile_t *tile = get_tile(tiles, x, y);
 
-			nodes[i].x = x;
-			nodes[i].y = y;
+			tile->id = tilemap1[y][x]; 
+			tile->obstacle = tilemap1[y][x]; 
+			tile->pos.x = x;
+			tile->pos.y = y;
 
 			if(y > 0)
 			{
-				nodes[i].neighbors[nodes[i].neighbors_num] = &nodes[(y - 1) * TILE_MAP_COUNT_X + (x + 0)];
-				nodes[i].neighbors_num += 1;
+				tile_t *tile_neighbor = get_tile(tiles, x + 0, y - 1);
+				tile->neighbors[tile->neighbors_num] = tile_neighbor;  
+				tile->neighbors_num += 1;
 			}
 			if(y < TILE_MAP_COUNT_Y - 1)
 			{
-				nodes[i].neighbors[nodes[i].neighbors_num] = &nodes[(y + 1) * TILE_MAP_COUNT_X + (x + 0)];
-				nodes[i].neighbors_num += 1;
+				tile_t *tile_neighbor = get_tile(tiles, x + 0, y + 1);
+				tile->neighbors[tile->neighbors_num] = tile_neighbor; 
+				tile->neighbors_num += 1;
 			}
 			if(x > 0)
 			{
-				nodes[i].neighbors[nodes[i].neighbors_num] = &nodes[(y + 0) * TILE_MAP_COUNT_X + (x - 1)];
-				nodes[i].neighbors_num += 1;
+				tile_t *tile_neighbor = get_tile(tiles, x - 1, y + 0);
+				tile->neighbors[tile->neighbors_num] = tile_neighbor; 
+				tile->neighbors_num += 1;
 			}
 			if(x < TILE_MAP_COUNT_X - 1)
 			{
-				nodes[i].neighbors[nodes[i].neighbors_num] = &nodes[(y + 0) * TILE_MAP_COUNT_X + (x + 1)];
-				nodes[i].neighbors_num += 1;
+				tile_t *tile_neighbor = get_tile(tiles, x + 1, y + 0);
+				tile->neighbors[tile->neighbors_num] = tile_neighbor; 
+				tile->neighbors_num += 1;
 			}
-			//printf("(%d %d) - ", nodes[y * TILE_MAP_COUNT_X + x].y, nodes[y * TILE_MAP_COUNT_X + x].x);
-			//printf("%p %p %p %p\n", nodes[y * TILE_MAP_COUNT_X + x].neighbors[0], nodes[y * TILE_MAP_COUNT_X + x].neighbors[1], nodes[y * TILE_MAP_COUNT_X + x].neighbors[2], nodes[y * TILE_MAP_COUNT_X + x].neighbors[3]);
 		}
 	}
 
-
-
-	vec2f_t player_tile = {2.0f, 2.0f};
-	vec2f_t player_pos = {player_tile.x * world.tile_size * world.scale + world.offset.x,
-				player_tile.y * world.tile_size * world.scale + world.offset.y};
+	vec2i_t player_tile_pos = {3, 2};
+	vec2f_t player_pos = {	player_tile_pos.x * world.tile_size * world.scale + world.offset.x,
+				player_tile_pos.y * world.tile_size * world.scale + world.offset.y};
 
 	vec2f_t cursor_tile = {2.0f, 2.0f};
 
@@ -307,9 +270,23 @@ int main()
 	float end_y = 0.0f;
 	float t = 0.0f;
 
-	float speed = 0.08f;
+	float speed = 0.2f;
 
 	move_buffer_index = -1;
+
+
+
+	vec2f_t enemy_tile = {5.0f, 2.0f};
+	vec2f_t enemy_pos = {	enemy_tile.x * world.tile_size * world.scale + world.offset.x,
+				enemy_tile.y * world.tile_size * world.scale + world.offset.y};
+
+
+
+	uint32_t enemy_animation_counter = 0;
+	uint32_t enemy_frame_counter = 0;
+
+	uint32_t player_animation_counter = 0;
+	uint32_t player_frame_counter = 0;
 
 	while(is_running)
 	{
@@ -368,12 +345,28 @@ int main()
 
 						case SDLK_SPACE:
 						{
-							if(move_buffer_index < 0 && !is_moving)
+							tile_t *start_tile = get_tile(tiles, player_tile_pos.x, player_tile_pos.y);
+							tile_t *end_tile = get_tile(tiles, cursor_tile.x, cursor_tile.y);
+
+							if(!end_tile->obstacle && end_tile->truly_reachable && is_move_in_range(end_tile->pos, start_tile->pos))
 							{
-								solve_astar(nodes, &nodes[(int)(player_tile.y * TILE_MAP_COUNT_X + player_tile.x)], &nodes[(int)(cursor_tile.y * TILE_MAP_COUNT_X + cursor_tile.x)]);
+								if(move_buffer_index < 0 && !is_moving)
+								{
+									// update possible movements
+									solve_astar(tiles, start_tile, end_tile);
+									generate_moves(end_tile);
+									printf("(%d %d) - %d\n", end_tile->pos.y, end_tile->pos.x, end_tile->truly_reachable);
+									printf("(%d %d) - %d\n", end_tile->pos.y, end_tile->pos.x, end_tile->obstacle);
+									printf("\n");
+								}
 							}
-							//printf("(%f %f)\n", player_tile.x, player_tile.y);
-							//printf("(%f %f)\n", cursor_tile.x, cursor_tile.y);
+							for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
+							{
+								for(int x = 0; x < TILE_MAP_COUNT_X; x++)
+								{
+									//printf("(%d %d) - %d", y, x, get_tile(tiles, x, y)->reachable);
+								}
+							}
 						} break;
 					}
 				} break;
@@ -398,8 +391,8 @@ int main()
 		{
 			start_moving = 0;
 
-			player_tile.x += move_buffer[move_buffer_index].x;
-			player_tile.y += move_buffer[move_buffer_index].y;
+			player_tile_pos.x += move_buffer[move_buffer_index].x;
+			player_tile_pos.y += move_buffer[move_buffer_index].y;
 
 			start_x = player_pos.x;
 			start_y = player_pos.y;
@@ -424,6 +417,45 @@ int main()
 		}
 
 		
+	for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
+	{
+		for(int x = 0; x < TILE_MAP_COUNT_X; x++)
+		{
+			get_tile(tiles, x, y)->truly_reachable = 0;
+
+			vec2i_t current_tile_pos = {x, y};
+			if(	is_move_in_range(current_tile_pos, player_tile_pos) && 
+				!get_tile(tiles, x, y)->obstacle)
+			{
+				get_tile(tiles, x, y)->reachable = 1;
+			}
+			else
+			{
+				get_tile(tiles, x, y)->reachable = 0;
+			}
+		}
+	}
+
+	get_tile(tiles, enemy_tile.x, enemy_tile.y)->obstacle = 1;
+	get_tile(tiles, enemy_tile.x, enemy_tile.y)->reachable = 0;
+									
+	for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
+	{
+		for(int x = 0; x < TILE_MAP_COUNT_X; x++)
+		{
+			if(tiles[y * TILE_MAP_COUNT_X + x].reachable == 1)
+			{
+				tile_t *tile_start = get_tile(tiles, player_tile_pos.x, player_tile_pos.y);
+				tile_t *tile_end = get_tile(tiles, x, y);
+				solve_astar(tiles,  tile_start, tile_end);
+				uint32_t moves_num = generate_moves_tmp(tile_end);
+
+				if(moves_num <= 4 && moves_num != 1)
+					tiles[y * TILE_MAP_COUNT_X + x].truly_reachable = 1;
+			}
+		}
+	}
+
 
 		// render background
 		SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
@@ -434,7 +466,8 @@ int main()
 		{
 			for(int x = 0; x < TILE_MAP_COUNT_X; x++)
 			{
-				int32_t tile_id = game_state->tiles[y * TILE_MAP_COUNT_X + x];
+				int32_t tile_id = get_tile(tiles, x, y)->id;
+
 				if(tile_id == 0)
 				{
 					SDL_SetRenderDrawColor(renderer, 32, 32, 32, 255);
@@ -443,41 +476,86 @@ int main()
 				{
 					SDL_SetRenderDrawColor(renderer, 48, 48, 48, 255);
 				}
-				SDL_Rect tile_rect = {x * world.tile_size * world.scale + world.offset.x, y * world.scale * world.tile_size + world.offset.y, world.tile_size * world.scale, world.tile_size * world.scale};
+
+				SDL_Rect tile_rect = {	x * world.tile_size * world.scale + world.offset.x, 
+							y * world.scale * world.tile_size + world.offset.y, 
+							world.tile_size * world.scale, 
+							world.tile_size * world.scale};
 				SDL_RenderFillRect(renderer, &tile_rect);
 			}
 		}
 
 		// render moving area
-#if 0
-		for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
+		if(move_buffer_index < 0 && !is_moving)
 		{
-			for(int x = 0; x < TILE_MAP_COUNT_X; x++)
+			for(int y = 0; y < TILE_MAP_COUNT_Y; y++)
 			{
-				if(check_valid_move(x, y, player_x, player_y))
+				for(int x = 0; x < TILE_MAP_COUNT_X; x++)
 				{
-					SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
-					SDL_Rect area_rect = {x * world.tile_size * world.scale + world.offset.x, y * world.scale * world.tile_size + world.offset.y, world.tile_size * world.scale, world.tile_size * world.scale};
-					SDL_RenderFillRect(renderer, &area_rect);
+					if(get_tile(tiles, x, y)->truly_reachable && !get_tile(tiles, x, y)->obstacle)
+					{
+						SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+						SDL_Rect area_rect = {	x * world.tile_size * world.scale + world.offset.x, 
+									y * world.scale * world.tile_size + world.offset.y, 
+									world.tile_size * world.scale, 
+									world.tile_size * world.scale};
+						SDL_RenderFillRect(renderer, &area_rect);
+					}
 				}
 			}
 		}
-#endif
 
 		// render cursor
 		SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
-		SDL_Rect cursor_rect = {cursor_tile.x * world.tile_size * world.scale + world.offset.x, cursor_tile.y * world.scale * world.tile_size + world.offset.y, world.tile_size * world.scale, world.tile_size * world.scale};
+		SDL_Rect cursor_rect = {cursor_tile.x * world.tile_size * world.scale + world.offset.x, 
+					cursor_tile.y * world.scale * world.tile_size + world.offset.y, 
+					world.tile_size * world.scale, 
+					world.tile_size * world.scale};
 		SDL_RenderFillRect(renderer, &cursor_rect);
 
 		/// render player bg debug
 		SDL_SetRenderDrawColor(renderer, 255, 128, 0, 255);
-		SDL_Rect player_bg_rect = {player_tile.x * world.tile_size * world.scale + world.offset.x, player_tile.y * world.scale * world.tile_size + world.offset.y, world.tile_size * world.scale, world.tile_size * world.scale};
+		SDL_Rect player_bg_rect = {	player_tile_pos.x * world.tile_size * world.scale + world.offset.x, 
+						player_tile_pos.y * world.scale * world.tile_size + world.offset.y, 
+						world.tile_size * world.scale, 
+						world.tile_size * world.scale};
 		SDL_RenderFillRect(renderer, &player_bg_rect);
 
 		// render player
-		SDL_Rect player_src_rect = {0, 0, 8, 8};
-		SDL_Rect player_dst_rect = {player_pos.x, player_pos.y, world.tile_size * world.scale, world.tile_size * world.scale};
+		player_animation_counter++;
+		if(player_animation_counter >= 10)
+		{
+			player_animation_counter = 0;
+			player_frame_counter++;
+			player_frame_counter = player_frame_counter % 2;
+		}
+		SDL_Rect player_src_rect = {	player_frame_counter * world.tile_size, 
+						0, 
+						world.tile_size, 
+						world.tile_size};
+		SDL_Rect player_dst_rect = {	player_pos.x, 
+						player_pos.y, 
+						world.tile_size * world.scale, 
+						world.tile_size * world.scale};
 		SDL_RenderCopy(renderer, player_texture, &player_src_rect, &player_dst_rect);
+
+		// render enemy
+		enemy_animation_counter++;
+		if(enemy_animation_counter >= 10)
+		{
+			enemy_animation_counter = 0;
+			enemy_frame_counter++;
+			enemy_frame_counter = enemy_frame_counter % 2;
+		}
+		SDL_Rect enemy_src_rect = {	enemy_frame_counter * world.tile_size, 
+						0, 
+						world.tile_size, 
+						world.tile_size};
+		SDL_Rect enemy_dst_rect = {	enemy_pos.x, 
+						enemy_pos.y, 
+						world.tile_size * world.scale, 
+						world.tile_size * world.scale};
+		SDL_RenderCopy(renderer, player_texture, &enemy_src_rect, &enemy_dst_rect);
 
 
 
@@ -486,9 +564,9 @@ int main()
 		char *dst = "";
 
 		dst = concat(dst, "(y: ");
-		dst = concat(dst, _itoa(player_tile.y));
+		dst = concat(dst, _itoa(cursor_tile.y));
 		dst = concat(dst, "  x: ");
-		dst = concat(dst, _itoa(player_tile.x));
+		dst = concat(dst, _itoa(cursor_tile.x));
 		dst = concat(dst, ")");
 		ui_font_text_render(renderer, font, dst, 16, 16);
 
