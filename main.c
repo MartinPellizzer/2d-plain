@@ -20,7 +20,7 @@ vec2f_t move_buffer[move_buffer_num];
 
 uint32_t tiles_distance(vec2i_t tile1_pos, vec2i_t tile2_pos)
 {
-	return (abs(tile1_pos.x - tile2_pos.x) + abs(tile1_pos.y - tile2_pos.y) < STATS_MOVE);
+	return (abs(tile1_pos.x - tile2_pos.x) + abs(tile1_pos.y - tile2_pos.y));
 }
 
 void ui_font_text_render(SDL_Renderer *renderer, TTF_Font *font, char *text, int32_t x, int32_t y)
@@ -175,6 +175,14 @@ void player_update_animation(player_t *player)
 		player->animation_frame = player->animation_frame % 2;
 	}
 }
+
+enum turn_state_e
+{
+	MENU,
+	MOVE,
+	ATT
+};
+
 int main()
 {
 	SDL_Init(SDL_INIT_EVERYTHING);
@@ -257,6 +265,8 @@ int main()
 		}
 	}
 
+	// init players
+#define PLAYERS_NUM 3
 	player_t player1 = {};
 	player1.tile_pos.x = 3;
 	player1.tile_pos.y = 2;
@@ -281,7 +291,6 @@ int main()
 	player3.animation_frame = 0;
 	player3.animation_counter = 0;
 
-#define PLAYERS_NUM 3
 	player_t *players[PLAYERS_NUM] = {};
 	players[0] = &player1;
 	players[1] = &player2;
@@ -290,13 +299,43 @@ int main()
 	uint32_t player_current_index = 0;
 	player_t *player_current = players[player_current_index];
 	
+	// init cursor
+	cursor_t cursor = {};
+	cursor.tile_pos.x = player_current->tile_pos.x;
+	cursor.tile_pos.y = player_current->tile_pos.y;
 
 
-	vec2i_t cursor_tile = {player_current->tile_pos.x, player_current->tile_pos.y};
 
-	SDL_Surface *surface_tmp = IMG_Load("./slime.png");
-	SDL_Texture *player_texture = SDL_CreateTextureFromSurface(renderer, surface_tmp);
-	SDL_FreeSurface(surface_tmp);
+	SDL_Surface *player_surface_tmp = IMG_Load("./slime.png");
+	SDL_Texture *player_texture = SDL_CreateTextureFromSurface(renderer, player_surface_tmp);
+	SDL_FreeSurface(player_surface_tmp);
+
+	SDL_Surface *ui_move_en_surface_tmp = IMG_Load("./ui_move_en.png");
+	SDL_Texture *ui_move_en_texture = SDL_CreateTextureFromSurface(renderer, ui_move_en_surface_tmp);
+	SDL_FreeSurface(ui_move_en_surface_tmp);
+
+	SDL_Surface *ui_move_dis_surface_tmp = IMG_Load("./ui_move_dis.png");
+	SDL_Texture *ui_move_dis_texture = SDL_CreateTextureFromSurface(renderer, ui_move_dis_surface_tmp);
+	SDL_FreeSurface(ui_move_dis_surface_tmp);
+
+	SDL_Surface *ui_att_en_surface_tmp = IMG_Load("./ui_att_en.png");
+	SDL_Texture *ui_att_en_texture = SDL_CreateTextureFromSurface(renderer, ui_att_en_surface_tmp);
+	SDL_FreeSurface(ui_att_en_surface_tmp);
+
+	SDL_Surface *ui_att_dis_surface_tmp = IMG_Load("./ui_att_dis.png");
+	SDL_Texture *ui_att_dis_texture = SDL_CreateTextureFromSurface(renderer, ui_att_dis_surface_tmp);
+	SDL_FreeSurface(ui_att_dis_surface_tmp);
+
+	SDL_Surface *ui_pass_en_surface_tmp = IMG_Load("./ui_pass_en.png");
+	SDL_Texture *ui_pass_en_texture = SDL_CreateTextureFromSurface(renderer, ui_pass_en_surface_tmp);
+	SDL_FreeSurface(ui_pass_en_surface_tmp);
+
+	SDL_Surface *ui_pass_dis_surface_tmp = IMG_Load("./ui_pass_dis.png");
+	SDL_Texture *ui_pass_dis_texture = SDL_CreateTextureFromSurface(renderer, ui_pass_dis_surface_tmp);
+	SDL_FreeSurface(ui_pass_dis_surface_tmp);
+
+
+
 
 	int is_running = 1;
 	int fps = 30;
@@ -325,6 +364,11 @@ int main()
 
 	uint32_t change_player = 1;
 	uint32_t player_has_moved = 0;
+
+	uint32_t menu_index = 0;
+	uint32_t turn_state = MENU;
+
+	uint32_t end_moving_one_shot = 1;
 
 	while(is_running)
 	{
@@ -359,26 +403,46 @@ int main()
 
 						case SDLK_LEFT:
 						{
-							if(move_buffer_index < 0 && !is_moving)
-								test_tile_x = -1;
+							if(turn_state == MOVE || turn_state == ATT)
+							{
+								if(move_buffer_index < 0 && !is_moving)
+									test_tile_x = -1;
+							}
 						} break;
 
 						case SDLK_RIGHT:
 						{
-							if(move_buffer_index < 0 && !is_moving)
-								test_tile_x = +1;
+							if(turn_state == MOVE || turn_state == ATT)
+							{
+								if(move_buffer_index < 0 && !is_moving)
+									test_tile_x = +1;
+							}
 						} break;
 
 						case SDLK_UP:
 						{
-							if(move_buffer_index < 0 && !is_moving)
-								test_tile_y = -1;
+							if(turn_state == MENU)
+							{
+								menu_index -= menu_index > 0 ? 1 : 0;
+							}
+							else if(turn_state == MOVE || turn_state == ATT)
+							{
+								if(move_buffer_index < 0 && !is_moving)
+									test_tile_y = -1;
+							}
 						} break;
 
 						case SDLK_DOWN:
 						{
-							if(move_buffer_index < 0 && !is_moving)
-								test_tile_y = +1;
+							if(turn_state == MENU)
+							{
+								menu_index += menu_index < 2 ? 1 : 0;
+							}
+							else if(turn_state == MOVE || turn_state == ATT)
+							{
+								if(move_buffer_index < 0 && !is_moving)
+									test_tile_y = +1;
+							}
 						} break;
 
 						case SDLK_SPACE:
@@ -389,12 +453,24 @@ int main()
 
 						case SDLK_z:
 						{
-							if(!player_has_moved)
+							if(turn_state == MENU)
+							{
+								if(menu_index == 0 && !player_has_moved)
+									turn_state = MOVE;
+								else if(menu_index == 1)
+									turn_state = ATT;
+								else if(menu_index == 2)
+								{		
+									change_player = 1;
+									turn_state = MENU;
+								}
+							}
+							else if(turn_state == MOVE)
 							{
 								tile_t *start_tile = get_tile(tiles, player_current->tile_pos.x, player_current->tile_pos.y);
-								tile_t *end_tile = get_tile(tiles, cursor_tile.x, cursor_tile.y);
+								tile_t *end_tile = get_tile(tiles, cursor.tile_pos.x, cursor.tile_pos.y);
 
-								if(!end_tile->obstacle && end_tile->truly_reachable && tiles_distance(end_tile->pos, start_tile->pos))
+								if(!end_tile->obstacle && end_tile->truly_reachable && tiles_distance(end_tile->pos, start_tile->pos) < STATS_MOVE)
 								{
 									if(move_buffer_index < 0 && !is_moving)
 									{
@@ -403,10 +479,18 @@ int main()
 										generate_moves(end_tile);
 
 										player_has_moved = 1;
+										start_moving = 1;
+										end_moving_one_shot = 1;
 									}
 								}
 							}
+
+							else if(turn_state == ATT)
+							{
+								turn_state = MENU;
+							}
 						} break;
+
 					}
 				} break;
 			}
@@ -415,24 +499,26 @@ int main()
 
 
 		// move cursor inside map
-		if(cursor_tile.x + test_tile_x >= 0 && cursor_tile.x + test_tile_x < TILE_MAP_COUNT_X)
-			cursor_tile.x += test_tile_x;
-		if(cursor_tile.y + test_tile_y >= 0 && cursor_tile.y + test_tile_y < TILE_MAP_COUNT_Y)
-			cursor_tile.y += test_tile_y;
+		if(cursor.tile_pos.x + test_tile_x >= 0 && cursor.tile_pos.x + test_tile_x < TILE_MAP_COUNT_X)
+			cursor.tile_pos.x += test_tile_x;
+		if(cursor.tile_pos.y + test_tile_y >= 0 && cursor.tile_pos.y + test_tile_y < TILE_MAP_COUNT_Y)
+			cursor.tile_pos.y += test_tile_y;
 		
-		// pass turn
+		// change player
 		if(change_player)
 		{
-			// change player
+			turn_state = MENU;
+			player_has_moved = 0;
+			end_moving_one_shot = 1;
+
+			// get next player
 			change_player = 0;
 			player_current_index++;			
 			player_current_index %= PLAYERS_NUM;
 			player_current = players[player_current_index];
-			cursor_tile.x = player_current->tile_pos.x;
-			cursor_tile.y = player_current->tile_pos.y;
+			cursor.tile_pos.x = player_current->tile_pos.x;
+			cursor.tile_pos.y = player_current->tile_pos.y;
 			
-			player_has_moved = 0;
-
 			// compute moving area
 			for(int i = 0; i < TILE_MAP_COUNT_Y * TILE_MAP_COUNT_X; i++)
 			{
@@ -440,18 +526,16 @@ int main()
 
 				vec2i_t tile_to_test_pos = {tiles[i].pos.x, tiles[i].pos.y};
 
-				if(tiles_distance(tile_to_test_pos, player_current->tile_pos) && !tiles[i].obstacle) 
+				if(tiles_distance(tile_to_test_pos, player_current->tile_pos) < STATS_MOVE && !tiles[i].obstacle) 
 					tiles[i].reachable = 1;
 				else
 					tiles[i].reachable = 0;
 			}
-
 			for(int i = 0; i < PLAYERS_NUM; i++)
 			{
 				if(players[i] != player_current)
 					get_tile(tiles, players[i]->tile_pos.x, players[i]->tile_pos.y)->reachable = 0;
 			}
-											
 			for(int i = 0; i < TILE_MAP_COUNT_Y * TILE_MAP_COUNT_X; i++)
 			{
 				if(tiles[i].reachable == 1)
@@ -461,20 +545,13 @@ int main()
 					solve_astar(tiles,  tile_start, tile_end);
 					uint32_t moves_num = generate_moves_tmp(tile_end);
 
-					if(moves_num <= 4 && moves_num != 1)
+					if(moves_num <= STATS_MOVE && moves_num != 1)
 						tiles[i].truly_reachable = 1;
 				}
 			}
 		}
 
 		// move player to cursor
-		if(!is_moving)
-		{
-			if(move_buffer_index >= 0)
-			{
-				start_moving = 1;
-			}
-		}
 		if(start_moving)
 		{
 			start_moving = 0;
@@ -503,8 +580,26 @@ int main()
 			player_current->pos.x = lerp(start_x, end_x, t);
 			player_current->pos.y = lerp(start_y, end_y, t);
 		}
+		else
+		{
+			if(move_buffer_index >= 0)
+			{
+				start_moving = 1;
+			}
+			else
+			{
+				if(player_has_moved)
+				{
+					if(end_moving_one_shot)
+					{	
+						end_moving_one_shot = 0;
+						turn_state = MENU;
+					}
+				}
+					
+			}
+		}
 
-		
 
 
 		// render background
@@ -529,16 +624,36 @@ int main()
 			SDL_RenderFillRect(renderer, &tile_rect);
 
 			// moving area
-			if(move_buffer_index < 0 && !is_moving && !player_has_moved)
+			if(turn_state == MOVE)
 			{
-				if(tiles[i].truly_reachable && !tiles[i].obstacle)
+				if(move_buffer_index < 0 && !is_moving && !player_has_moved)
 				{
-					SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
-					SDL_Rect area_rect = {	tiles[i].pos.x * world.tile_size * world.scale + world.offset.x, 
-								tiles[i].pos.y * world.scale * world.tile_size + world.offset.y, 
-								world.tile_size * world.scale, 
-								world.tile_size * world.scale};
-					SDL_RenderFillRect(renderer, &area_rect);
+					if(tiles[i].truly_reachable && !tiles[i].obstacle)
+					{
+						SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+						SDL_Rect area_rect = {	tiles[i].pos.x * world.tile_size * world.scale + world.offset.x, 
+									tiles[i].pos.y * world.scale * world.tile_size + world.offset.y, 
+									world.tile_size * world.scale, 
+									world.tile_size * world.scale};
+						SDL_RenderFillRect(renderer, &area_rect);
+					}
+				}
+			}
+
+			// attack area
+			else if(turn_state == ATT)
+			{
+				if(move_buffer_index < 0 && !is_moving)
+				{
+					if(tiles_distance(tiles[i].pos, player_current->tile_pos) < 2) 
+					{
+						SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+						SDL_Rect attack_rect = {tiles[i].pos.x * world.tile_size * world.scale + world.offset.x, 
+									tiles[i].pos.y * world.scale * world.tile_size + world.offset.y, 
+									world.tile_size * world.scale, 
+									world.tile_size * world.scale};
+						SDL_RenderFillRect(renderer, &attack_rect);
+					}
 				}
 			}
 		}
@@ -553,8 +668,8 @@ int main()
 
 		// render cursor
 		SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
-		SDL_Rect cursor_rect = {cursor_tile.x * world.tile_size * world.scale + world.offset.x, 
-					cursor_tile.y * world.scale * world.tile_size + world.offset.y, 
+		SDL_Rect cursor_rect = {cursor.tile_pos.x * world.tile_size * world.scale + world.offset.x, 
+					cursor.tile_pos.y * world.scale * world.tile_size + world.offset.y, 
 					world.tile_size * world.scale, 
 					world.tile_size * world.scale};
 		SDL_RenderFillRect(renderer, &cursor_rect);
@@ -574,6 +689,45 @@ int main()
 			SDL_RenderCopy(renderer, player_texture, &src_rect, &dst_rect);
 		}
 
+		// render ui battle menu
+		if(turn_state == MENU)
+		{
+			if(menu_index == 0)
+			{
+				SDL_Rect ui_move_en_dst_rect = {32, 320, 32 * world.scale, 8 * world.scale};
+				SDL_RenderCopy(renderer, ui_move_en_texture, NULL, &ui_move_en_dst_rect);
+
+				SDL_Rect ui_att_dis_dst_rect = {32, 400, 32 * world.scale, 8 * world.scale};
+				SDL_RenderCopy(renderer, ui_att_dis_texture, NULL, &ui_att_dis_dst_rect);
+
+				SDL_Rect ui_pass_dis_dst_rect = {32, 480, 32 * world.scale, 8 * world.scale};
+				SDL_RenderCopy(renderer, ui_pass_dis_texture, NULL, &ui_pass_dis_dst_rect);
+			}
+			else if(menu_index == 1)
+			{
+				SDL_Rect ui_move_dis_dst_rect = {32, 320, 32 * world.scale, 8 * world.scale};
+				SDL_RenderCopy(renderer, ui_move_dis_texture, NULL, &ui_move_dis_dst_rect);
+
+				SDL_Rect ui_att_en_dst_rect = {32, 400, 32 * world.scale, 8 * world.scale};
+				SDL_RenderCopy(renderer, ui_att_en_texture, NULL, &ui_att_en_dst_rect);
+
+				SDL_Rect ui_pass_dis_dst_rect = {32, 480, 32 * world.scale, 8 * world.scale};
+				SDL_RenderCopy(renderer, ui_pass_dis_texture, NULL, &ui_pass_dis_dst_rect);
+			}
+			else if(menu_index == 2)
+			{
+				SDL_Rect ui_move_dis_dst_rect = {32, 320, 32 * world.scale, 8 * world.scale};
+				SDL_RenderCopy(renderer, ui_move_dis_texture, NULL, &ui_move_dis_dst_rect);
+
+				SDL_Rect ui_att_dis_dst_rect = {32, 400, 32 * world.scale, 8 * world.scale};
+				SDL_RenderCopy(renderer, ui_att_dis_texture, NULL, &ui_att_dis_dst_rect);
+
+				SDL_Rect ui_pass_en_dst_rect = {32, 480, 32 * world.scale, 8 * world.scale};
+				SDL_RenderCopy(renderer, ui_pass_en_texture, NULL, &ui_pass_en_dst_rect);
+			}
+
+		}
+
 
 
 
@@ -587,9 +741,9 @@ int main()
 		char *dst = "";
 
 		dst = concat(dst, "(y: ");
-		dst = concat(dst, _itoa(cursor_tile.y));
+		dst = concat(dst, _itoa(cursor.tile_pos.y));
 		dst = concat(dst, "  x: ");
-		dst = concat(dst, _itoa(cursor_tile.x));
+		dst = concat(dst, _itoa(cursor.tile_pos.x));
 		dst = concat(dst, ")");
 		ui_font_text_render(renderer, font, dst, 16, 16);
 

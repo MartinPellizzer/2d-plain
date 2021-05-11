@@ -38,6 +38,11 @@ typedef struct tile_t
 	struct tile_t *parent;
 } tile_t;
 
+typedef struct cursor_t
+{
+	vec2i_t tile_pos;
+} cursor_t;
+
 typedef struct player_t
 {
 	vec2i_t tile_pos;
