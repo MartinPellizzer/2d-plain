@@ -30,7 +30,7 @@ int32_t _ftoi(float num)
 // TODO(martin): this function is for debug purposes only!!
 char* concat(char *src_1, char *src_2)
 {
-	static char dst[20];
+	static char dst[80];
 
 	uint32_t i_dst = 0;
 	uint32_t i_src = 0;
