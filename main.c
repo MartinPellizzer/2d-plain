@@ -38,7 +38,6 @@ enum turn_state_e
 
 uint32_t turn_state;
 
-uint32_t key_z_pressed;
 
 
 static int32_t
@@ -53,13 +52,96 @@ clipmaxi(int32_t val, int32_t max)
 	return (val < max) ? val : max;
 }
 
-#if 0
-	static int32_t
-	clipmaxf(float val, float max)
+
+
+// ------------------------------------------------------------------------------------------
+// TODO(martin): input ----------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------
+typedef struct input_t
+{
+	uint32_t key_escape_pressed; 
+	uint32_t key_space_pressed; 
+	uint32_t key_left_pressed; 
+	uint32_t key_right_pressed; 
+	uint32_t key_up_pressed; 
+	uint32_t key_down_pressed; 
+	uint32_t key_x_pressed; 
+	uint32_t key_z_pressed; 
+} input_t;
+
+input_t input = {};
+
+static void
+input_update(uint32_t *is_running)
+{
+	input.key_right_pressed = 0;
+	input.key_left_pressed = 0;
+	input.key_up_pressed = 0;
+	input.key_down_pressed = 0;
+	input.key_z_pressed = 0;
+	input.key_x_pressed = 0;
+
+	SDL_Event event;
+	while(SDL_PollEvent(&event))
 	{
-		return (val < max) ? val : max;
+		switch(event.type)
+		{
+			case SDL_QUIT:
+			{
+				*is_running = 0;
+			} break;
+
+			case SDL_KEYDOWN:
+			{
+				switch(event.key.keysym.sym)
+				{
+					case SDLK_ESCAPE:
+					{
+						*is_running = 0;
+					} break;
+
+					case SDLK_SPACE:
+					{
+						input.key_space_pressed = 1;
+					} break;
+						
+					case SDLK_LEFT:
+					{
+						input.key_left_pressed = 1;
+					} break;
+
+					case SDLK_RIGHT:
+					{
+						input.key_right_pressed = 1;
+					} break;
+
+					case SDLK_UP:
+					{
+						input.key_up_pressed = 1;
+					} break;
+
+					case SDLK_DOWN:
+					{
+						input.key_down_pressed = 1;
+					} break;
+
+					case SDLK_x:
+					{
+						input.key_x_pressed = 1;
+					} break;
+
+					case SDLK_z:
+					{
+						input.key_z_pressed = 1;
+					} break;
+				}
+			} break;
+		}
 	}
-#endif
+	
+}
+
+
 
 // -------------------------------------------------------------------------
 // TODO(martin): postprocess -----------------------------------------------
@@ -121,6 +203,8 @@ postprocess_fadeout(SDL_Renderer *renderer)
 	return fade.completed;
 }
 
+
+
 // -------------------------------------------------------------------------
 // dialogue ----------------------------------------------------------------
 // -------------------------------------------------------------------------
@@ -157,7 +241,7 @@ dialogue_render(SDL_Renderer *renderer, char *text, uint32_t text_length, uint32
 		SDL_Texture *_texture = SDL_CreateTextureFromSurface(renderer, _surface);;
 		SDL_Rect _dst_rect;
 
-		int32_t y = 350 + (i * 50);
+		int32_t y = 300 + (i * 50);
 		_dst_rect.x = x;
 		_dst_rect.y = y;
 		_dst_rect.w = 0;
@@ -172,15 +256,17 @@ dialogue_render(SDL_Renderer *renderer, char *text, uint32_t text_length, uint32
 }
 
 static uint32_t
-dialogue_play(SDL_Renderer *renderer, SDL_Texture *texture, char *text, uint32_t text_length, uint32_t alignment)
+dialogue_play(SDL_Renderer *renderer, input_t *input, SDL_Texture *texture, char *text, uint32_t text_length, uint32_t alignment)
 {
+	uint32_t completed = 0;
+	
 	cursor_index++;
 
 	SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
 	SDL_Rect bg_dst_rect;
-	bg_dst_rect.x = (alignment == 0) ? 0 : 800 - 700;
-	bg_dst_rect.y = 350;
+	bg_dst_rect.x = (alignment == 0) ? 0 : SCREEN_WIDTH - 700;
+	bg_dst_rect.y = SCREEN_HEIGHT - 250;
 	bg_dst_rect.w = 700;
 	bg_dst_rect.h = 200;
 	SDL_RenderFillRect(renderer, &bg_dst_rect);
@@ -192,8 +278,8 @@ dialogue_play(SDL_Renderer *renderer, SDL_Texture *texture, char *text, uint32_t
 	player_src_rect.h = 8;
 
 	SDL_Rect player_dst_rect; 
-	player_dst_rect.x = (alignment == 0) ? 32 : 600;
-	player_dst_rect.y = 350;
+	player_dst_rect.x = (alignment == 0) ? 32 : SCREEN_WIDTH - 200;
+	player_dst_rect.y = 280;
 	player_dst_rect.w = 3 * 8 * 8;
 	player_dst_rect.h = 3 * 8 * 8;
 
@@ -203,28 +289,30 @@ dialogue_play(SDL_Renderer *renderer, SDL_Texture *texture, char *text, uint32_t
 	{
 		cursor_index = text_length;
 		
-		if(key_z_pressed)
+		if(input->key_z_pressed)
 		{
 			cursor_index = 0;
-			key_z_pressed = 0;
-			return 1;
+			completed = 1;
 		}
 	}
 	else
 	{
-		if(key_z_pressed)
+		if(input->key_z_pressed)
 		{
-			key_z_pressed = 0;
 			cursor_index = text_length;
 		}
 	}
 
 	if(alignment == 0)
+	{
 		dialogue_render(renderer, text, cursor_index, 250);
+	}
 	else
-		dialogue_render(renderer, text, cursor_index, 150);
+	{
+		dialogue_render(renderer, text, cursor_index, 300);
+	}
 	
-	return 0;
+	return completed;
 }
 
 uint32_t tiles_distance(vec2i_t tile1_pos, vec2i_t tile2_pos)
@@ -584,7 +672,7 @@ move_down(entity_t *entity)
 }
 
 static void
-cutscene_1_play(SDL_Renderer *renderer, entity_t *entities)
+cutscene_1_play(SDL_Renderer *renderer, input_t *input, entity_t *entities)
 {
 	if(cutscene_index == 0)
 		cutscene_index += postprocess_fadein(renderer);
@@ -600,6 +688,7 @@ cutscene_1_play(SDL_Renderer *renderer, entity_t *entities)
 	{	
 		turn_state = DIALOGUE;
 		cutscene_index += dialogue_play(renderer, 
+						input,
 						entities[0].texture,
 						"I'm a SLIME...\nMOTHERFUCKER!!!\n",
 						sizeof("I'm a SLIME...\nMOTHERFUCKER!!!\n"),
@@ -621,6 +710,7 @@ cutscene_1_play(SDL_Renderer *renderer, entity_t *entities)
 	{
 		turn_state = DIALOGUE;
 		cutscene_index += dialogue_play(renderer, 
+						input,
 						entities[1].texture,
 						"I'm a BUNNY...\nSUPER-MOTHERFUCKER!!!\n",
 						sizeof("I'm a BUNNY...\nSUPER-MOTHERFUCKER!!!\n"),
@@ -638,27 +728,26 @@ cutscene_1_play(SDL_Renderer *renderer, entity_t *entities)
 }
 
 static uint32_t
-cutscene_2_play(SDL_Renderer *renderer, entity_t *entities)
+cutscene_2_play(SDL_Renderer *renderer, input_t *input, entity_t *entities)
 {
 	uint32_t completed = 0;
 
 	if(cutscene_index == 0)
-		cutscene_index += delay(30);
-	if(cutscene_index == 1)
 	{	
 		turn_state = DIALOGUE;
 		cutscene_index += dialogue_play(renderer, 
+						input,
 						entities[0].texture,
 						"Me SUPPAPAWAAA!!!\n",
 						sizeof("Me SUPPAPAWAAA!!!\n"),
 						0);
 	}
-	if(cutscene_index == 2)
+	if(cutscene_index == 1)
 		cutscene_index += delay(30);
-	if(cutscene_index == 3)
+	if(cutscene_index == 2)
 		cutscene_index += postprocess_fadeout(renderer);
 
-	if(cutscene_index == 4)
+	if(cutscene_index == 3)
 	{
 		current_cutscene_id = 0;
 		cutscene_index = 0;
@@ -672,7 +761,7 @@ cutscene_2_play(SDL_Renderer *renderer, entity_t *entities)
 }
 
 static uint32_t
-cutscene_3_play(SDL_Renderer *renderer, entity_t *entities)
+cutscene_3_play(SDL_Renderer *renderer, input_t *input, entity_t *entities)
 {
 	uint32_t completed = 0;
 
@@ -711,6 +800,7 @@ texture_load(SDL_Renderer *renderer, char *path)
 // ------------------------------------------------------------------------------------------
 // TODO(martin): next stage -----------------------------------------------------------------
 // ------------------------------------------------------------------------------------------
+#if 0
 battle_t battle = {};
 static void
 battle_over(entity_t *players)
@@ -730,6 +820,7 @@ battle_over(entity_t *players)
 	else if(game_win != 0)
 		battle.is_over = game_win;
 }
+#endif
 
 
 
@@ -803,6 +894,21 @@ turn_pass(entity_t *players, entity_t **current_player, tile_t *current_tiles, c
 	turn.has_attacked = 0;
 }
 
+
+
+// ------------------------------------------------------------------------------------------
+// TODO(martin): cursor ---------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------
+static void
+cursor_move(cursor_t *cursor, int32_t x, int32_t y)
+{
+	if(cursor->tile_pos.x + x >= 0 && cursor->tile_pos.x + x < TILE_MAP_COUNT_X)
+		cursor->tile_pos.x += x;
+	if(cursor->tile_pos.y + y >= 0 && cursor->tile_pos.y + y < TILE_MAP_COUNT_Y)
+		cursor->tile_pos.y += y;
+}
+
+
 int main()
 {
 	SDL_Init(SDL_INIT_EVERYTHING);
@@ -837,6 +943,27 @@ int main()
 	// ------------------------------------------------------------------
 	// TODO(martin): init tiles  ----------------------------------------
 	// ------------------------------------------------------------------
+#define TILEMAP_WORLD_COUNT_X 16
+#define TILEMAP_WORLD_COUNT_Y 16
+	uint32_t tilemap_world[TILEMAP_WORLD_COUNT_Y][TILEMAP_WORLD_COUNT_X] = 
+	{
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,},
+	};
 	uint32_t tilemap1[TILE_MAP_COUNT_Y][TILE_MAP_COUNT_X] = 
 	{
 		{1,1,1,1,1,1,1,1,},
@@ -861,16 +988,20 @@ int main()
 	};
 
 	
+	tile_t tiles_world[TILEMAP_WORLD_COUNT_Y * TILEMAP_WORLD_COUNT_X] = {};
+	tiles_init(tiles_world, *tilemap_world);
+
 	tile_t tiles1[TILE_MAP_COUNT_Y * TILE_MAP_COUNT_X] = {};
 	tiles_init(tiles1, *tilemap1);
 
 	tile_t tiles2[TILE_MAP_COUNT_Y * TILE_MAP_COUNT_X] = {};
 	tiles_init(tiles2, *tilemap2);
 
-#define TILES_NUM 2
+#define TILES_NUM 3
 	tile_t *tiles[TILES_NUM] = {};
 	tiles[0] = tiles1;
 	tiles[1] = tiles2;
+	tiles[2] = tiles_world;
 
 	tile_t *current_tiles = tiles[0];
 	
@@ -925,7 +1056,7 @@ int main()
 
 
 
-	turn_state = MENU;
+	turn_state = EXPLORE;
 
 
 
@@ -944,237 +1075,190 @@ int main()
 
 
 
-	int is_running = 1;
+	uint32_t is_running = 1;
 	int fps = 30;
 	int32_t millis_per_frame = 1000 / fps;
 	int32_t current_millis = 0;
 	while(is_running)
 	{
-		// set fps
+		// ------------------------------------------------------------------
+		// TODO(martin): manage fps -----------------------------------------
+		// ------------------------------------------------------------------
 		float dt = SDL_GetTicks() - current_millis;
 		float time_to_wait = millis_per_frame - dt;
 		if(time_to_wait < millis_per_frame)
 			SDL_Delay(time_to_wait);
 		current_millis = SDL_GetTicks();
 
-		int32_t test_tile_x = 0;
-		int32_t test_tile_y = 0;
 
-		SDL_Event event;
-		while(SDL_PollEvent(&event))
+
+		// ------------------------------------------------------------------
+		// TODO(martin): manage input ---------------------------------------
+		// ------------------------------------------------------------------
+		input_update(&is_running);
+
+		if(0)
 		{
-			switch(event.type)
+		}
+
+		else if(turn_state == DIALOGUE)
+		{
+		}
+
+		else if(turn_state == EXPLORE)
+		{
+			if(input.key_right_pressed)
 			{
-				case SDL_QUIT:
-				{
-					is_running = 0;
-				} break;
-
-				case SDL_KEYDOWN:
-				{
-					switch(event.key.keysym.sym)
-					{
-						case SDLK_ESCAPE:
-						{
-							is_running = 0;
-						} break;
-
-						case SDLK_LEFT:
-						{
-							if(turn_state == EXPLORE)
-							{
-								cursor.tile_pos.x += -1;
-							}
-							else if(turn_state == MOVE || turn_state == ATT)
-							{
-								if(move_buffer_index < 0 && !is_moving)
-									test_tile_x = -1;
-							}
-						} break;
-
-						case SDLK_RIGHT:
-						{
-							if(turn_state == EXPLORE)
-							{
-								cursor.tile_pos.x += 1;
-							}
-							else if(turn_state == MOVE || turn_state == ATT)
-							{
-								if(move_buffer_index < 0 && !is_moving)
-									test_tile_x = +1;
-							}
-						} break;
-
-						case SDLK_UP:
-						{
-							if(turn_state == EXPLORE)
-							{
-								cursor.tile_pos.y -= 1;
-							}
-							else if(turn_state == MENU)
-							{
-								menu_battle_move_to_prev_available_option();
-							}
-							else if(turn_state == MOVE || turn_state == ATT)
-							{
-								if(move_buffer_index < 0 && !is_moving)
-									test_tile_y = -1;
-							}
-						} break;
-
-						case SDLK_DOWN:
-						{
-							if(turn_state == EXPLORE)
-							{
-								cursor.tile_pos.y += 1;
-							}
-							else if(turn_state == MENU)
-							{
-								menu_battle_move_to_next_available_option();
-							}
-							else if(turn_state == MOVE || turn_state == ATT)
-							{
-								if(move_buffer_index < 0 && !is_moving)
-									test_tile_y = +1;
-							}
-						} break;
-
-						case SDLK_SPACE:
-						{
-						} break;
-
-						case SDLK_h:
-						{
-						} break;
-
-						case SDLK_j:
-						{
-						} break;
-
-						case SDLK_k:
-						{
-						} break;
-
-						case SDLK_l:
-						{
-						} break;
-
-						case SDLK_q:
-						{
-							if(current_cutscene_id == 0)
-							{
-								turn_state = CUTSCENE;
-								current_cutscene_id = 1;
-							}
-						} break;
-
-						case SDLK_x:
-						{
-							if(turn_state == MENU)
-							{
-								cursor.tile_pos = player_current->tile_pos;
-								turn_state = EXPLORE;
-							}
-							else if(turn_state == MOVE)
-							{
-								cursor.tile_pos = player_current->tile_pos;
-								turn_state = MENU;
-							}
-							else if(turn_state == ATT)
-							{
-								cursor.tile_pos = player_current->tile_pos;
-								turn_state = MENU;
-							}
-						} break;
-
-						case SDLK_z:
-						{
-							if(turn_state == EXPLORE)
-							{
-								cursor.tile_pos = player_current->tile_pos;
-								turn_state = MENU;
-							}
-							else if(turn_state == DIALOGUE)
-							{
-								key_z_pressed = 1;
-							}
-							else if(turn_state == MENU)
-							{
-								if(menu_index == 0 && !turn.has_moved)
-									turn_state = MOVE;
-								else if(menu_index == 1 && !turn.has_attacked)
-									turn_state = ATT;
-								else if(menu_index == 2)
-								{		
-									turn_pass(players, &player_current, current_tiles, &cursor);
-									turn_state = MENU;
-									menu_index = menu_option_move;
-								}
-							}
-							else if(turn_state == MOVE)
-							{
-								tile_t *start_tile = get_tile(current_tiles, player_current->tile_pos.x, player_current->tile_pos.y);
-								tile_t *end_tile = get_tile(current_tiles, cursor.tile_pos.x, cursor.tile_pos.y);
-
-								if(!end_tile->obstacle && end_tile->truly_reachable && tiles_distance(end_tile->pos, start_tile->pos) < STATS_MOVE)
-								{
-									if(move_buffer_index < 0 && !is_moving)
-									{
-										// update possible movements
-										solve_astar(current_tiles, start_tile, end_tile);
-										generate_moves(end_tile);
-
-										turn.has_moved = 1;
-									}
-								}
-							}
-
-							else if(turn_state == ATT)
-							{
-								entity_t *target = get_player_under_cursor(players, &cursor);
-								if(target && target->hp > 0) 
-								{
-									target->hp -= player_current->att;
-									if(target->hp <= 0)
-									{
-										target->dead = 1;
-									}
-									cursor.tile_pos = player_current->tile_pos;
-									menu_options[menu_option_att] = 1;
-									menu_index++;
-									turn.has_attacked = 1;
-									turn_state = MENU;
-
-									if(player_current->hp <= 0)
-									{
-										turn_state = MENU;
-										menu_index = menu_option_move;
-									}
-								}
-							}
-						} break;
-
-					}
-				} break;
+				cursor_move(&cursor, 1, 0);
+			}
+			else if(input.key_left_pressed)
+			{
+				cursor_move(&cursor, -1, 0);
+			}
+			else if(input.key_up_pressed)
+			{
+				cursor_move(&cursor, 0, -1);
+			}
+			else if(input.key_down_pressed)
+			{
+				cursor_move(&cursor, 0, 1);
+			}
+			else if(input.key_z_pressed)
+			{
+				cursor.tile_pos = player_current->tile_pos;
+				turn_state = MENU;
 			}
 		}
 
+		else if(turn_state == MENU)
+		{
+			if(input.key_up_pressed)
+			{
+				menu_battle_move_to_prev_available_option();
+			}
+			else if(input.key_down_pressed)
+			{
+				menu_battle_move_to_next_available_option();
+			}
+			else if(input.key_x_pressed)
+			{
+				cursor.tile_pos = player_current->tile_pos;
+				turn_state = EXPLORE;
+			}
+			else if(input.key_z_pressed)
+			{
+				if(menu_index == 0 && !turn.has_moved)
+				{
+					turn_state = MOVE;
+				}
+				else if(menu_index == 1 && !turn.has_attacked)
+				{
+					turn_state = ATT;
+				}
+				else if(menu_index == 2)
+				{		
+					turn_pass(players, &player_current, current_tiles, &cursor);
+					menu_index = menu_option_move;
+					turn_state = MENU;
+				}
+			}
+		}
 
-		// move cursor inside map
-		if(cursor.tile_pos.x + test_tile_x >= 0 && cursor.tile_pos.x + test_tile_x < TILE_MAP_COUNT_X)
-			cursor.tile_pos.x += test_tile_x;
-		if(cursor.tile_pos.y + test_tile_y >= 0 && cursor.tile_pos.y + test_tile_y < TILE_MAP_COUNT_Y)
-			cursor.tile_pos.y += test_tile_y;
+		else if(turn_state == MOVE)
+		{
+			if(input.key_right_pressed)
+			{
+				if(move_buffer_index < 0 && !is_moving)
+					cursor_move(&cursor, 1, 0);
+			}
+			else if(input.key_left_pressed)
+			{
+				if(move_buffer_index < 0 && !is_moving)
+					cursor_move(&cursor, -1, 0);
+			}
+			else if(input.key_up_pressed)
+			{
+				if(move_buffer_index < 0 && !is_moving)
+					cursor_move(&cursor, 0, -1);
+			}
+			else if(input.key_down_pressed)
+			{
+				if(move_buffer_index < 0 && !is_moving)
+					cursor_move(&cursor, 0, 1);
+			}
+			else if(input.key_x_pressed)
+			{
+				cursor.tile_pos = player_current->tile_pos;
+				turn_state = MENU;
+			}
+			else if(input.key_z_pressed)
+			{
+				tile_t *start_tile = get_tile(current_tiles, player_current->tile_pos.x, player_current->tile_pos.y);
+				tile_t *end_tile = get_tile(current_tiles, cursor.tile_pos.x, cursor.tile_pos.y);
+				if(!end_tile->obstacle && end_tile->truly_reachable && tiles_distance(end_tile->pos, start_tile->pos) < STATS_MOVE)
+				{
+					if(move_buffer_index < 0 && !is_moving)
+					{
+						solve_astar(current_tiles, start_tile, end_tile);
+						generate_moves(end_tile);
+						turn.has_moved = 1;
+					}
+				}
+			}
+		}
+
+		else if(turn_state == ATT)
+		{
+			if(input.key_right_pressed)
+			{
+				cursor_move(&cursor, 1, 0);
+			}
+			else if(input.key_left_pressed)
+			{
+				cursor_move(&cursor, -1, 0);
+			}
+			else if(input.key_up_pressed)
+			{
+				cursor_move(&cursor, 0, -1);
+			}
+			else if(input.key_down_pressed)
+			{
+				cursor_move(&cursor, 0, 1);
+			}
+			else if(input.key_x_pressed)
+			{
+				cursor.tile_pos = player_current->tile_pos;
+				turn_state = MENU;
+			}
+			else if(input.key_z_pressed)
+			{
+				entity_t *target = get_player_under_cursor(players, &cursor);
+				if(target && target->hp > 0) 
+				{
+					target->hp -= player_current->att;
+					if(target->hp <= 0)
+					{
+						target->dead = 1;
+					}
+					cursor.tile_pos = player_current->tile_pos;
+					menu_options[menu_option_att] = 1;
+					menu_index++;
+					turn.has_attacked = 1;
+					turn_state = MENU;
+					if(player_current->hp <= 0)
+					{
+						turn_state = MENU;
+						menu_index = menu_option_move;
+					}
+				}
+			}
+		}
 
 
 
 		// ------------------------------------------------------------------
 		// TODO(martin): end battle -----------------------------------------
 		// ------------------------------------------------------------------
-#if 0
-		battle_over(players);
-		
-#else
 		uint32_t game_win = 1;
 		uint32_t game_lose = 1;
 		for(int i = 0; i < PLAYERS_NUM; i++)
@@ -1204,8 +1288,8 @@ int main()
 			}
 			current_cutscene_id = 2;
 		}
-#endif
 		
+
 
 		// ------------------------------------------------------------------
 		// TODO(martin): move player to cursor ------------------------------
@@ -1231,6 +1315,10 @@ int main()
 
 
 
+
+		// ------------------------------------------------------------------
+		// TODO(martin): render section -------------------------------------
+		// ------------------------------------------------------------------
 
 		// render background
 		SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
@@ -1423,7 +1511,6 @@ int main()
 		// --------------------------------------------------------
 		if(turn_state == DIALOGUE)
 		{
-			
 			if(dialogue_num == 0)
 			{
 			}
@@ -1437,19 +1524,19 @@ int main()
 		// --------------------------------------------------------
 		if(current_cutscene_id == 1)
 		{
-			cutscene_1_play(renderer, players);
+			cutscene_1_play(renderer, &input, players);
 		}
 		else if(current_cutscene_id == 2)
 		{
-			if(cutscene_2_play(renderer, players))
+			if(cutscene_2_play(renderer, &input, players))
 			{
-				current_tiles = tiles[1];
+				current_tiles = tiles[2];
 				current_cutscene_id = 3;
 			}
 		}
 		else if(current_cutscene_id == 3)
 		{
-			if(cutscene_3_play(renderer, players))
+			if(cutscene_3_play(renderer, &input, players))
 			{
 			}
 		}
@@ -1457,8 +1544,10 @@ int main()
 
 
 		// --------------------------------------------------------
-		// TODO(martin): postprocess 
+		// TODO(martin): render postprocess 
 		// --------------------------------------------------------
+		
+		// fade
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(renderer, 0, 0, 0, (fade.val));
 		SDL_Rect rect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
@@ -1471,8 +1560,9 @@ int main()
 		// DEBUG ONLY!!
 		// --------------------------------------------------------
 		char *dst = "";
-
 		SDL_Color color = {255, 255, 255, 255};
+
+#if 0
 		dst = concat(dst, "(y: ");
 		dst = concat(dst, _itoa(cursor.tile_pos.y));
 		dst = concat(dst, "  x: ");
@@ -1486,11 +1576,16 @@ int main()
 		dst = concat(dst, " - MILLIS: ");
 		dst = concat(dst, _itoa(millis_per_frame));
 		ui_font_text_render(renderer, font, color, dst, 16, 48);
+#endif
 
 		dst = "";
 		dst = concat(dst, "DT: ");
 		dst = concat(dst, _itoa(dt));
+#if 0
 		ui_font_text_render(renderer, font, color, dst, 16, 80);
+#else
+		ui_font_text_render(renderer, font, color, dst, 16, 16);
+#endif
 
 		dst = "";
 		dst = concat(dst, "NAME: ");
