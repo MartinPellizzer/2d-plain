@@ -28,6 +28,7 @@ int32_t move_buffer_index;
 vec2f_t move_buffer[move_buffer_num];
 
 #define STATS_MOVE 4
+TTF_Font *gb_font;
 
 enum battle_state_e
 {
@@ -582,12 +583,12 @@ player_update_animation(entity_t *player)
 	}
 }
 
-entity_t* get_player_under_cursor(entity_t **players, cursor_t *cursor)
+entity_t* get_player_under_cursor(entity_t **players, new_entity_t *cursor)
 {
 	int i = 0;
 	while(players[i])
 	{
-		if(cursor->tile_pos.x == players[i]->tile_pos.x && cursor->tile_pos.y == players[i]->tile_pos.y)
+		if(cursor->transform->coord.x == players[i]->tile_pos.x && cursor->transform->coord.y == players[i]->tile_pos.y)
 		{
 			return players[i];
 		}
@@ -983,13 +984,13 @@ get_player_with_highest_priority(entity_t **players, entity_t **enemies)
 }
 
 static void
-turn_pass(entity_t **players, entity_t **enemies, entity_t **current_player, tilemap_t *tilemap, cursor_t *cursor)
+turn_pass(entity_t **players, entity_t **enemies, entity_t **current_player, tilemap_t *tilemap, new_entity_t *cursor)
 {
 	tile_t *current_tiles = tilemap->tiles;
 	*current_player = get_player_with_highest_priority(players, enemies);
 
 	// set cursor pos to player
-	cursor->tile_pos = (*current_player)->tile_pos;
+	cursor->transform->coord = (*current_player)->tile_pos;
 
 	// compute moving area
 	for(int i = 0; i < tilemap->tiles_count_y * tilemap->tiles_count_x; i++)
@@ -1040,25 +1041,25 @@ turn_pass(entity_t **players, entity_t **enemies, entity_t **current_player, til
 
 
 // ------------------------------------------------------------------------------------------
-// TODO(martin): =cursor
+// TODO(martin): ;cursor
 // ------------------------------------------------------------------------------------------
 static void
-cursor_move(cursor_t *cursor, int32_t x, int32_t y, tilemap_t *tilemap)
+cursor_move(new_entity_t *cursor, int32_t x, int32_t y, tilemap_t *tilemap)
 {
-	if(cursor->tile_pos.x + x >= 0 && cursor->tile_pos.x + x < tilemap->tiles_count_x)
-		cursor->tile_pos.x += x;
-	if(cursor->tile_pos.y + y >= 0 && cursor->tile_pos.y + y < tilemap->tiles_count_y)
-		cursor->tile_pos.y += y;
+	if(cursor->transform->coord.x + x >= 0 && cursor->transform->coord.x + x < tilemap->tiles_count_x)
+		cursor->transform->coord.x += x;
+	if(cursor->transform->coord.y + y >= 0 && cursor->transform->coord.y + y < tilemap->tiles_count_y)
+		cursor->transform->coord.y += y;
 }
 
 static void
-cursor_render(SDL_Renderer *renderer, cursor_t *cursor)
+cursor_render(SDL_Renderer *renderer, new_entity_t *cursor)
 {
 	SDL_Rect src_rect = {	0, 
 				0, 
 				world.tile_size, 
 				world.tile_size};
-	vec2f_t pos = get_pos_from_tile(cursor->tile_pos, &world);
+	vec2f_t pos = get_pos_from_tile(cursor->transform->coord, &world);
 	SDL_Rect dst_rect = {	pos.x + camera.x, 
 				pos.y + camera.y, 
 				world.tile_size * world.scale, 
@@ -1079,10 +1080,10 @@ camera_focus_entity(camera_t *camera, entity_t *entity)
 }
 
 // ------------------------------------------------------------------------------------------
-// TODO(martin): =placement area
+// TODO(martin): ;placement area
 // ------------------------------------------------------------------------------------------
 static void
-placement_area_render(SDL_Renderer *renderer, tilemap_t *tilemap, entity_t *tmp_player, cursor_t *cursor)
+placement_area_render(SDL_Renderer *renderer, tilemap_t *tilemap, entity_t *tmp_player, new_entity_t *cursor)
 {
 	for(int i = 0; i < 8; i++)
 	{
@@ -1090,7 +1091,7 @@ placement_area_render(SDL_Renderer *renderer, tilemap_t *tilemap, entity_t *tmp_
 					0, 
 					world.tile_size, 
 					world.tile_size};
-		vec2f_t pos = get_pos_from_tile(tilemap->starting_pos[i], &world);
+		vec2f_t pos = get_pos_from_tile(tilemap->placements[i].transform->coord, &world);
 		SDL_Rect dst_rect = {	pos.x + camera.x, 
 					pos.y + camera.y, 
 					world.tile_size * world.scale, 
@@ -1099,26 +1100,29 @@ placement_area_render(SDL_Renderer *renderer, tilemap_t *tilemap, entity_t *tmp_
 	}
 	if(tmp_player)
 	{
-#if 1
 		tmp_player->pos = get_pos_from_tile(tmp_player->tile_pos, &world);
 		player_render(renderer, tmp_player);
-		printf("%d %d\n", tmp_player->tile_pos.x, tmp_player->tile_pos.y);
-#else
-		SDL_Rect src_rect = {	0, 
+	}
+}
+static void
+placement_ui_render(SDL_Renderer *renderer, entity_t **players, int32_t index)
+{
+	SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+	SDL_Rect bg_dst_rect = {0, 
+				SCREEN_HEIGHT - 200, 
+				SCREEN_WIDTH, 
+				100};
+	SDL_RenderFillRect(renderer, &bg_dst_rect);
+	SDL_Rect player_src_rect = {	0, 
 					0, 
 					world.tile_size, 
 					world.tile_size};
-		vec2f_t pos = get_pos_from_tile(tmp_player->tile_pos, &world);
-		SDL_Rect dst_rect;
-		dst_rect.x = pos.x + camera.x;
-		dst_rect.y = pos.y + camera.y;
-		dst_rect.w = world.tile_size * world.scale;
-		dst_rect.h = world.tile_size * world.scale;
-		SDL_RenderCopy(renderer, tmp_player->texture, &src_rect, &dst_rect);
-#endif
-	}
+	SDL_Rect player_dst_rect = {	SCREEN_WIDTH / 2, 
+					SCREEN_HEIGHT - 200, 
+					world.tile_size * world.scale, 
+					world.tile_size * world.scale};
+	SDL_RenderCopy(renderer, players[index]->texture, &player_src_rect, &player_dst_rect);
 }
-
 
 int main()
 {
@@ -1129,6 +1133,7 @@ int main()
 	TTF_Init();
 	TTF_Font *font = TTF_OpenFont("./font.ttf", 24);
 	font_dialogue = TTF_OpenFont("./font.ttf", 48);
+	gb_font = TTF_OpenFont("./gb_font.ttf", 16);
 
 #if 0
 	memory_t memory = {};
@@ -1210,24 +1215,25 @@ int main()
 	tilemap_1.name = "STAGE 1";
 	tilemap_1.tiles_count_x = 8;
 	tilemap_1.tiles_count_y = 8;
-	tilemap_1.starting_pos[0].x = 1;
-	tilemap_1.starting_pos[0].y = 2;
-	tilemap_1.starting_pos[1].x = 2;
-	tilemap_1.starting_pos[1].y = 2;
-	tilemap_1.starting_pos[2].x = 1;
-	tilemap_1.starting_pos[2].y = 3;
-	tilemap_1.starting_pos[3].x = 2;
-	tilemap_1.starting_pos[3].y = 3;
-	tilemap_1.starting_pos[4].x = 1;
-	tilemap_1.starting_pos[4].y = 4;
-	tilemap_1.starting_pos[5].x = 2;
-	tilemap_1.starting_pos[5].y = 4;
-	tilemap_1.starting_pos[6].x = 1;
-	tilemap_1.starting_pos[6].y = 5;
-	tilemap_1.starting_pos[7].x = 2;
-	tilemap_1.starting_pos[7].y = 5;
 	tilemap_1.tiles = tiles1;
 	tiles_init(&tilemap_1, *tilemap1);
+
+	transform_t placement0 = {{1, 2}, {0, 0}};
+	tilemap_1.placements[0].transform = &placement0;
+	transform_t placement1 = {{2, 2}, {0, 0}};
+	tilemap_1.placements[1].transform = &placement1;
+	transform_t placement2 = {{1, 3}, {0, 0}};
+	tilemap_1.placements[2].transform = &placement2;
+	transform_t placement3 = {{2, 3}, {0, 0}};
+	tilemap_1.placements[3].transform = &placement3;
+	transform_t placement4 = {{1, 4}, {0, 0}};
+	tilemap_1.placements[4].transform = &placement4;
+	transform_t placement5 = {{2, 4}, {0, 0}};
+	tilemap_1.placements[5].transform = &placement5;
+	transform_t placement6 = {{1, 5}, {0, 0}};
+	tilemap_1.placements[6].transform = &placement6;
+	transform_t placement7 = {{2, 5}, {0, 0}};
+	tilemap_1.placements[7].transform = &placement7;
 
 	tile_t tiles2[12 * 6] = {};
 	tilemap_t tilemap_2 = {};
@@ -1269,11 +1275,23 @@ int main()
 	SDL_Texture *cursor_texture = texture_load(renderer, "./assets/16x16/cursor.png");
 	SDL_Texture *moving_area_texture = texture_load(renderer, "./assets/16x16/moving_area.png");
 	SDL_Texture *attack_area_texture = texture_load(renderer, "./assets/16x16/attack_area.png");
+	SDL_Texture *heart_texture = texture_load(renderer, "./assets/16x16/heart.png");
+	SDL_Texture *mana_texture = texture_load(renderer, "./assets/16x16/mana.png");
+	SDL_Texture *dante_texture = texture_load(renderer, "./assets/16x16/dante.png");
+	SDL_Texture *chibi1_texture = texture_load(renderer, "./assets/16x16/chibi1.png");
+	SDL_Texture *wm_texture = texture_load(renderer, "./assets/16x16/wm.png");
+	SDL_Texture *penelo_texture = texture_load(renderer, "./assets/16x16/penelo.png");
+	SDL_Texture *bo_texture = texture_load(renderer, "./assets/16x16/bo.png");
+	SDL_Texture *bob_texture = texture_load(renderer, "./assets/16x16/bob.png");
+	SDL_Texture *siluette_texture = texture_load(renderer, "./assets/16x16/siluette.png");
+	SDL_Texture *siluette_color_texture = texture_load(renderer, "./assets/16x16/siluette_color.png");
+	SDL_Texture *siluette_shade_texture = texture_load(renderer, "./assets/16x16/siluette_shaded.png");
+	SDL_Texture *template_texture = texture_load(renderer, "./assets/16x16/template.png");
 #endif
 
 
 	// ------------------------------------------------------------------
-	// TODO(martin): =players init
+	// TODO(martin): ;player init
 	// ------------------------------------------------------------------
 	uint32_t id_index = 0;
 	entity_t player1;
@@ -1284,13 +1302,13 @@ int main()
 	player1.tile_pos.y = 2;
 	player1.pos = get_pos_from_tile(player1.tile_pos, &world);
 	player1.hp = 21;
+	player1.mp = 8;
 	player1.att = 255;
 	player1.speed = 120;
 	player1.move_speed = 0.06f;
 	player1.stats_move = 3;
 	player1.team = 1;
 	player1.dir = animation_dir_down;
-
 	entity_t player2;
 	player2.id = id_index++;
 	player2.name = "Slime 2";
@@ -1299,13 +1317,13 @@ int main()
 	player2.tile_pos.y = 3;
 	player2.pos = get_pos_from_tile(player2.tile_pos, &world);
 	player2.hp = 21;
+	player2.mp = 8;
 	player2.att = 255;
 	player2.speed = 120;
 	player2.move_speed = 0.1f;
 	player2.stats_move = 4;
 	player2.team = 1;
 	player2.dir = animation_dir_right;
-
 	entity_t player3;
 	player3.id = id_index++;
 	player3.name = "Slime 3";
@@ -1314,18 +1332,21 @@ int main()
 	player3.tile_pos.y = 4;
 	player3.pos = get_pos_from_tile(player3.tile_pos, &world);
 	player3.hp = 21;
+	player3.mp = 8;
 	player3.att = 255;
 	player3.speed = 120;
 	player3.move_speed = 0.1f;
 	player3.stats_move = 5;
 	player3.team = 1;
 	player3.dir = animation_dir_right;
-
 	entity_t *players[PLAYERS_NUM] = {};
 	players[0] = &player1;
 	players[1] = &player2;
 	players[2] = &player3;
 
+	// ------------------------------------------------------------------
+	// TODO(martin): ;player battle
+	// ------------------------------------------------------------------
 	int32_t battle_players_index = -1;
 	entity_t *battle_players[8] = {};
 
@@ -1342,16 +1363,17 @@ int main()
 
 
 	// ------------------------------------------------------------------
-	// TODO(martin): init enemies ---------------------------------------
+	// TODO(martin): ;enemies all
 	// ------------------------------------------------------------------
 	entity_t enemy1 = {};
 	enemy1.id = 100;
 	enemy1.name = "Bunny 1";
-	enemy1.texture = slime_grey_shade_texture;
+	enemy1.texture = penelo_texture;
 	enemy1.tile_pos.x = 5;
 	enemy1.tile_pos.y = 2;
 	enemy1.pos = get_pos_from_tile(enemy1.tile_pos, &world);
 	enemy1.hp = 24;
+	enemy1.mp = 6;
 	enemy1.att = 255;
 	enemy1.speed = 100;
 	enemy1.move_speed = 0.1f;
@@ -1362,11 +1384,12 @@ int main()
 	entity_t enemy2 = {};
 	enemy2.id = 100;
 	enemy2.name = "Neo Slime 1";
-	enemy2.texture = slime_grey_shade_texture;
+	enemy2.texture = penelo_texture;
 	enemy2.tile_pos.x = 7;
 	enemy2.tile_pos.y = 7;
 	enemy2.pos = get_pos_from_tile(enemy2.tile_pos, &world);
 	enemy2.hp = 24;
+	enemy2.mp = 6;
 	enemy2.att = 255;
 	enemy2.speed = 100;
 	enemy2.move_speed = 0.08f;
@@ -1374,22 +1397,57 @@ int main()
 	enemy2.team = 2;
 	enemy2.dir = animation_dir_right;
 
+	entity_t enemy3 = {};
+	enemy3.id = 100;
+	enemy3.name = "Neo Slime 1";
+	enemy3.texture = penelo_texture;
+	enemy3.tile_pos.x = 5;
+	enemy3.tile_pos.y = 7;
+	enemy3.pos = get_pos_from_tile(enemy3.tile_pos, &world);
+	enemy3.hp = 24;
+	enemy3.mp = 6;
+	enemy3.att = 255;
+	enemy3.speed = 100;
+	enemy3.move_speed = 0.08f;
+	enemy3.stats_move = 8;
+	enemy3.team = 2;
+	enemy3.dir = animation_dir_left;
 
+	entity_t enemy4 = {};
+	enemy4.id = 100;
+	enemy4.name = "Neo Slime 1";
+	enemy4.texture = penelo_texture;
+	enemy4.tile_pos.x = 7;
+	enemy4.tile_pos.y = 5;
+	enemy4.pos = get_pos_from_tile(enemy4.tile_pos, &world);
+	enemy4.hp = 24;
+	enemy4.mp = 6;
+	enemy4.att = 255;
+	enemy4.speed = 100;
+	enemy4.move_speed = 0.08f;
+	enemy4.stats_move = 8;
+	enemy4.team = 2;
+	enemy4.dir = animation_dir_up;
 
-	entity_t *enemies[PLAYERS_NUM] = {};
+	entity_t *enemies[8] = {};
 	enemies[0] = &enemy1;
 	enemies[1] = &enemy2;
+	enemies[2] = &enemy3;
+	enemies[3] = &enemy4;
 
 
 
 
 	// ------------------------------------------------------------------
-	// TODO(martin): init cursor ----------------------------------------
+	// TODO(martin): ;cursor
 	// ------------------------------------------------------------------
-	cursor_t cursor = {};
-	cursor.tile_pos.x = current_player->tile_pos.x;
-	cursor.tile_pos.y = current_player->tile_pos.y;
+	transform_t transform = {};
+	transform.coord.x = 0;
+	transform.coord.y = 0;
+	transform.pos = get_pos_from_tile(transform.coord, &world);
+	new_entity_t cursor = {};
 	cursor.texture = cursor_texture;
+	cursor.transform = &transform;
 
 	// ------------------------------------------------------------------
 	// TODO(martin): load battle menu ui resources ----------------------
@@ -1493,7 +1551,7 @@ int main()
 			}
 			else if(input.key_z_pressed)
 			{
-				cursor.tile_pos = current_player->tile_pos;
+				cursor.transform->coord = current_player->tile_pos;
 				battle_state = MENU;
 				camera_focus_entity(&camera, current_player);
 			}
@@ -1568,7 +1626,7 @@ int main()
 				uint32_t found = 0;
 				for(int i = 0; i < 8; i++)
 				{
-					if(current_tilemap->starting_pos[i].x == test_x && current_tilemap->starting_pos[i].y == test_y)
+					if(current_tilemap->placements[i].transform->coord.x == test_x && current_tilemap->placements[i].transform->coord.y == test_y)
 					{
 						found = 1;
 						break;
@@ -1587,7 +1645,7 @@ int main()
 				uint32_t found = 0;
 				for(int i = 0; i < 8; i++)
 				{
-					if(current_tilemap->starting_pos[i].x == test_x && current_tilemap->starting_pos[i].y == test_y)
+					if(current_tilemap->placements[i].transform->coord.x == test_x && current_tilemap->placements[i].transform->coord.y == test_y)
 					{
 						found = 1;
 						break;
@@ -1606,7 +1664,7 @@ int main()
 				uint32_t found = 0;
 				for(int i = 0; i < 8; i++)
 				{
-					if(current_tilemap->starting_pos[i].x == test_x && current_tilemap->starting_pos[i].y == test_y)
+					if(current_tilemap->placements[i].transform->coord.x == test_x && current_tilemap->placements[i].transform->coord.y == test_y)
 					{
 						found = 1;
 						break;
@@ -1625,7 +1683,7 @@ int main()
 				uint32_t found = 0;
 				for(int i = 0; i < 8; i++)
 				{
-					if(current_tilemap->starting_pos[i].x == test_x && current_tilemap->starting_pos[i].y == test_y)
+					if(current_tilemap->placements[i].transform->coord.x == test_x && current_tilemap->placements[i].transform->coord.y == test_y)
 					{
 						found = 1;
 						break;
@@ -1685,7 +1743,7 @@ int main()
 			}
 			else if(input.key_z_pressed)
 			{
-				cursor.tile_pos = current_player->tile_pos;
+				cursor.transform->coord = current_player->tile_pos;
 				battle_state = MENU;
 			}
 		}
@@ -1702,7 +1760,7 @@ int main()
 			}
 			else if(input.key_x_pressed)
 			{
-				cursor.tile_pos = current_player->tile_pos;
+				cursor.transform->coord = current_player->tile_pos;
 				battle_state = EXPLORE;
 			}
 			else if(input.key_z_pressed)
@@ -1749,13 +1807,13 @@ int main()
 			}
 			else if(input.key_x_pressed)
 			{
-				cursor.tile_pos = current_player->tile_pos;
+				cursor.transform->coord = current_player->tile_pos;
 				battle_state = MENU;
 			}
 			else if(input.key_z_pressed)
 			{
 				tile_t *start_tile = get_tile(current_tilemap, current_player->tile_pos.x, current_player->tile_pos.y);
-				tile_t *end_tile = get_tile(current_tilemap, cursor.tile_pos.x, cursor.tile_pos.y);
+				tile_t *end_tile = get_tile(current_tilemap, cursor.transform->coord.x, cursor.transform->coord.y);
 				if(!end_tile->obstacle && end_tile->truly_reachable && tiles_distance(end_tile->pos, start_tile->pos) < current_player->stats_move)
 				{
 					if(move_buffer_index < 0 && !is_moving)
@@ -1788,7 +1846,7 @@ int main()
 			}
 			else if(input.key_x_pressed)
 			{
-				cursor.tile_pos = current_player->tile_pos;
+				cursor.transform->coord = current_player->tile_pos;
 				battle_state = MENU;
 			}
 			else if(input.key_z_pressed)
@@ -1801,7 +1859,7 @@ int main()
 					{
 						target->dead = 1;
 					}
-					cursor.tile_pos = current_player->tile_pos;
+					cursor.transform->coord = current_player->tile_pos;
 					menu_options[menu_option_att] = 1;
 					menu_index++;
 					turn.has_attacked = 1;
@@ -1825,45 +1883,6 @@ int main()
 			camera_focus_entity(&camera, current_player);
 		}
 
-
-
-		// ------------------------------------------------------------------
-		// TODO(martin): end battle -----------------------------------------
-		// ------------------------------------------------------------------
-#if 0
-		uint32_t game_win = 1;
-		uint32_t game_lose = 1;
-		for(int i = 0; i < PLAYERS_NUM; i++)
-		{
-			if(players[i].team == 1 && !players[i].dead)
-				game_lose = 0;
-			if(players[i].team == 2 && !players[i].dead)
-				game_win = 0;
-		}
-		if(game_win == 1)
-		{
-			printf("you win\n");
-			for(int i = 0; i < PLAYERS_NUM; i++)
-			{
-				players[i].dead = 0;
-				players[i].hp = 2;
-			}
-			cutscene.id = 2;
-		}
-		if(game_lose == 1)
-		{
-			printf("you lose\n");
-			for(int i = 0; i < PLAYERS_NUM; i++)
-			{
-				players[i].dead = 0;
-				players[i].hp = 2;
-			}
-			cutscene.id = 2;
-		}
-#endif
-
-
-
 		// ------------------------------------------------------------------
 		// TODO(martin): move player
 		// ------------------------------------------------------------------
@@ -1878,8 +1897,6 @@ int main()
 				battle_state = MENU;
 			}
 		}
-
-
 
 		// ------------------------------------------------------------------
 		// TODO(martin): render section -------------------------------------
@@ -1954,17 +1971,15 @@ int main()
 				{
 					if(tiles_distance(current_tilemap->tiles[i].pos, current_player->tile_pos) < 2) 
 					{
-						SDL_Rect src_rect; 
-						SDL_Rect dst_rect; 
-						src_rect.x = 0;
-						src_rect.y = 0;
-						src_rect.w = world.tile_size;
-						src_rect.h = world.tile_size;
+						SDL_Rect src_rect = {	0, 
+									0, 
+									world.tile_size, 
+									world.tile_size};
 						vec2f_t pos = get_pos_from_tile(current_tilemap->tiles[i].pos, &world);
-						dst_rect.x = pos.x + camera.x;
-						dst_rect.y = pos.y + camera.y;
-						dst_rect.w = world.tile_size * world.scale;
-						dst_rect.h = world.tile_size * world.scale;
+						SDL_Rect dst_rect = {	pos.x + camera.x, 
+									pos.y + camera.y, 
+									world.tile_size * world.scale, 
+									world.tile_size * world.scale};
 						SDL_RenderCopy(renderer, attack_area_texture, &src_rect, &dst_rect);
 					}
 				}
@@ -1972,57 +1987,15 @@ int main()
 		}
 
 		// --------------------------------------------------------
-		// TODO(martin): =placement area render
+		// TODO(martin): ;placement render
 		// --------------------------------------------------------
 		if(battle_state == PLACEMENT_SELECT_UNIT || battle_state == PLACEMENT_PLACE_UNIT)
 		{
-#if 0
-			SDL_Rect dst_rect;
-			SDL_Rect src_rect;
-			SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-			for(int i = 0; i < 8; i++)
-			{
-				dst_rect.x = current_tilemap->starting_pos[i].x * world.tile_size * world.scale + camera.x;
-				dst_rect.y = current_tilemap->starting_pos[i].y * world.scale * world.tile_size + camera.y;
-				dst_rect.w = world.tile_size * world.scale;
-				dst_rect.h = world.tile_size * world.scale;
-				SDL_RenderFillRect(renderer, &dst_rect);
-			}
-			if(tmp_player)
-			{
-				src_rect.x = 0;
-				src_rect.y = 0;
-				src_rect.w = 8;
-				src_rect.h = 8;
-				dst_rect.x = tmp_player->tile_pos.x * world.tile_size * world.scale + camera.x;
-				dst_rect.y = tmp_player->tile_pos.y * world.tile_size * world.scale + camera.y;
-				dst_rect.w = world.tile_size * world.scale;
-				dst_rect.h = world.tile_size * world.scale;
-				SDL_RenderCopy(renderer, tmp_player->texture, &src_rect, &dst_rect);
-			}
-#else
 			placement_area_render(renderer, current_tilemap, tmp_player, &cursor);
-#endif
 		}
 		if(battle_state == PLACEMENT_SELECT_UNIT)
 		{
-			SDL_Rect dst_rect;
-			SDL_Rect src_rect;
-			SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-			dst_rect.x = 0;
-			dst_rect.y = SCREEN_HEIGHT - 200; 
-			dst_rect.w = SCREEN_WIDTH;
-			dst_rect.h = 100;
-			SDL_RenderFillRect(renderer, &dst_rect);
-			src_rect.x = 0;
-			src_rect.y = 0;
-			src_rect.w = world.tile_size,
-			src_rect.h = world.tile_size,
-			dst_rect.x = SCREEN_WIDTH / 2;
-			dst_rect.y = SCREEN_HEIGHT - 200;
-			dst_rect.w = world.tile_size * world.scale;
-			dst_rect.h = world.tile_size * world.scale;
-			SDL_RenderCopy(renderer, players[placement_select_unit_index]->texture, &src_rect, &dst_rect);
+			placement_ui_render(renderer, players, placement_select_unit_index);
 		}
 
 		// --------------------------------------------------------
@@ -2050,8 +2023,49 @@ int main()
 		}
 
 		// --------------------------------------------------------
-		// TODO(martin): =ui render
+		// TODO(martin): ;ui render
 		// --------------------------------------------------------
+		{
+#if 0
+			{
+				SDL_Rect dst_rect;
+				dst_rect.x = 32; 
+				dst_rect.y = 96; 
+				dst_rect.w = world.tile_size * world.scale;
+				dst_rect.h = world.tile_size * world.scale;
+				SDL_RenderCopy(renderer, heart_texture, NULL, &dst_rect);
+				char *dst = "";
+				SDL_Color color = {255, 255, 255, 255};
+				dst = "";
+				dst = concat(dst, "HP: ");
+				dst = concat(dst, _itoa(current_player->hp));
+				dst_rect.x = 32 + (world.tile_size * world.scale) + 8; 
+				dst_rect.y = 96 + (world.tile_size / 2) + 4; 
+				dst_rect.w = world.tile_size * world.scale;
+				dst_rect.h = world.tile_size * world.scale;
+				ui_font_text_render(renderer, gb_font, color, dst, dst_rect.x, dst_rect.y);
+			}
+			{
+				SDL_Rect dst_rect;
+				dst_rect.x = 32; 
+				dst_rect.y = 144; 
+				dst_rect.w = world.tile_size * world.scale;
+				dst_rect.h = world.tile_size * world.scale;
+				SDL_RenderCopy(renderer, mana_texture, NULL, &dst_rect);
+				char *dst = "";
+				SDL_Color color = {255, 255, 255, 255};
+				dst = "";
+				dst = concat(dst, "MP: ");
+				dst = concat(dst, _itoa(current_player->mp));
+				dst_rect.x = 32 + (world.tile_size * world.scale) + 8; 
+				dst_rect.y = 144 + (world.tile_size / 2) + 4; 
+				dst_rect.w = world.tile_size * world.scale;
+				dst_rect.h = world.tile_size * world.scale;
+				ui_font_text_render(renderer, gb_font, color, dst, dst_rect.x, dst_rect.y);
+			}
+#endif
+		}
+
 		if(battle_state == MENU)
 		{
 			if(menu_index == 0)
@@ -2140,7 +2154,7 @@ int main()
 			cutscene_1_play(renderer, &world, &input, battle_players, enemies, &camera);
 			if(cutscene.completed)
 			{
-				cursor.tile_pos = current_player->tile_pos;
+				cursor.transform->coord = current_player->tile_pos;
 				battle_state = DEBUG_EXPLORE;
 			}
 		}

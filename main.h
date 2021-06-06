@@ -87,16 +87,6 @@ typedef struct tile_t
 	struct tile_t *parent;
 } tile_t;
 
-typedef struct tilemap_t
-{
-	char *name;
-	uint32_t tiles_count_x;
-	uint32_t tiles_count_y;
-	vec2i_t starting_pos[8];
-
-	tile_t *tiles;
-} tilemap_t;
-
 
 typedef struct camera_t
 {
@@ -142,6 +132,7 @@ typedef struct entity_t
 
 	char *name;
 	int32_t hp;
+	int32_t mp;
 	int32_t att;
 	int32_t speed;
 	int32_t speed_accumulator;
@@ -181,5 +172,29 @@ enum animation_dir_e
 	animation_dir_up,
 	animation_dir_down,
 } animation_dir_e;
+
+typedef struct transform_t
+{
+	vec2i_t coord;
+	vec2f_t pos;
+} transform_t;
+
+typedef struct new_entity_t
+{
+	SDL_Texture *texture;
+	transform_t *transform;
+} new_entity_t;
+
+typedef struct tilemap_t
+{
+	char *name;
+	uint32_t tiles_count_x;
+	uint32_t tiles_count_y;
+	new_entity_t placements[8];
+
+	tile_t *tiles;
+} tilemap_t;
+
+
 
 #endif
